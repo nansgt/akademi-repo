@@ -11,17 +11,39 @@
   const progress = document.querySelector("[data-follow-progress]");
   const pollPanel = document.querySelector("[data-follow-poll]");
   const reactions = document.querySelector("[data-follow-reactions]");
+  const paceToggle = document.querySelector("[data-follow-pace-toggle]");
   const fullscreenButton = document.querySelector("[data-follow-fullscreen]");
+  const joinGate = document.querySelector("[data-follow-join]");
+  const experience = document.querySelector("[data-follow-experience]");
+  const joinForm = document.querySelector("[data-follow-join-form]");
+  const questionPanel = document.querySelector("[data-follow-question-panel]");
+  const questionForm = document.querySelector("[data-follow-question-form]");
+  const questionList = document.querySelector("[data-follow-questions]");
+  const questionCount = document.querySelector("[data-follow-question-count]");
   const themes = new Set(["modern", "editorial", "vibrant", "data", "minimal"]);
   let timer = null;
   let countdownTimer = null;
   let lastSlideKey = "";
+  let lastTimerKey = "";
+  let lastPollKey = "";
+  let lastReactionKey = "";
   let stopped = false;
   let connected = false;
+  let pollInFlight = false;
   let latestState = null;
+  let interactionRevision = 0;
+  let interactionPending = false;
   let participantId = "";
+  let participantName = "";
+  let lastQuestionsKey = "";
   const ownAnswers = new Map();
-  const reactionNames = { understood: "I understand", confused: "I’m confused", slower: "Please slow down", faster: "We can go faster" };
+  const ownReactions = new Map();
+  const reactionNames = {
+    understood: "😊 I understand",
+    confused: "🤔 I’m confused",
+    slower: "🐢 Please slow down",
+    faster: "🚀 We can go faster"
+  };
   const colors = new Set(["#e5484d", "#2f80ed", "#27ae60", "#f2c94c", "#ffffff"]);
 
   const textElement = (tag, text, className = "") => {
@@ -57,7 +79,10 @@
       body.append(tr);
     });
     table.append(head, body);
-    frame.append(table);
+    const scroll = document.createElement("div");
+    scroll.className = "presentation-visual-table-scroll";
+    scroll.append(table);
+    frame.append(scroll);
     return frame;
   }
 
@@ -215,70 +240,40 @@
     return null;
   }
 
-  function contentUnits(slide, mode) {
-    const points = Array.isArray(slide.key_points)
-      ? slide.key_points.filter((point) => typeof point === "string" && point.trim()).slice(0, 12)
-      : [];
-    const size = mode === "item" || mode === "timed" ? 1 : 2;
-    const units = [];
-    for (let index = 0; index < points.length; index += size) units.push({ type: "points", value: points.slice(index, index + size) });
-    if (slide.visual) units.push({ type: "visual", value: slide.visual });
-    if (slide.visual_suggestion) units.push({ type: "suggestion", value: slide.visual_suggestion });
-    if (slide.activity) units.push({ type: "activity", value: slide.activity });
-    return units;
-  }
-
-  function renderAnnotations(article, data) {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 1000 1000");
-    svg.setAttribute("preserveAspectRatio", "none");
-    svg.setAttribute("aria-hidden", "true");
-    svg.classList.add("presentation-follow-annotations");
-    (Array.isArray(data.annotations) ? data.annotations : []).forEach((stroke) => {
-      if (!stroke || !Array.isArray(stroke.points) || !colors.has(stroke.color)) return;
-      const points = stroke.points
-        .filter((point) => Array.isArray(point) && point.length === 2
-          && point.every((value) => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1))
-        .map(([x, y]) => `${Number(x) * 1000},${Number(y) * 1000}`)
-        .join(" ");
-      if (!points) return;
-      const polyline = document.createElementNS(svg.namespaceURI, "polyline");
-      polyline.setAttribute("points", points);
-      polyline.setAttribute("fill", "none");
-      polyline.setAttribute("stroke", colors.has(stroke.color) ? stroke.color : "#e5484d");
-      polyline.setAttribute("stroke-width", stroke.tool === "highlighter" ? "22" : "8");
-      polyline.setAttribute("stroke-linecap", "round");
-      polyline.setAttribute("stroke-linejoin", "round");
-      if (stroke.tool === "highlighter") polyline.setAttribute("stroke-opacity", ".28");
-      svg.append(polyline);
-    });
-    article.append(svg);
-
-    const pointer = data.pointer;
-    if (pointer?.active && Number.isFinite(Number(pointer.x)) && Number.isFinite(Number(pointer.y))
-      && colors.has(pointer.color)) {
-      const laser = document.createElement("span");
+  function renderPointer(pointer) {
+    const article = stage.querySelector(".presentation-slide-preview");
+    if (!article) return;
+    let laser = article.querySelector(".presentation-follow-laser");
+    const valid = pointer?.active
+      && Number.isFinite(Number(pointer.x)) && Number.isFinite(Number(pointer.y))
+      && colors.has(pointer.color);
+    if (!valid) {
+      laser?.remove();
+      return;
+    }
+    if (!laser) {
+      laser = document.createElement("span");
       laser.className = "presentation-follow-laser";
       laser.setAttribute("aria-hidden", "true");
-      laser.style.left = `${Math.max(0, Math.min(1, Number(pointer.x))) * 100}%`;
-      laser.style.top = `${Math.max(0, Math.min(1, Number(pointer.y))) * 100}%`;
-      laser.style.setProperty("--laser-color", pointer.color);
       article.append(laser);
     }
+    laser.style.left = `${Math.max(0, Math.min(1, Number(pointer.x))) * 100}%`;
+    laser.style.top = `${Math.max(0, Math.min(1, Number(pointer.y))) * 100}%`;
+    laser.style.setProperty("--laser-color", pointer.color);
   }
 
   function renderPoll(poll) {
     pollPanel.replaceChildren();
-    pollPanel.hidden = !poll;
-    if (!poll) return;
+    const selected = poll ? ownAnswers.get(poll.id) : undefined;
+    pollPanel.hidden = !poll || selected !== undefined;
+    if (!poll || selected !== undefined) return;
     pollPanel.append(textElement("h2", poll.question, "presentation-follow-poll-question"));
     const options = Array.isArray(poll.options) ? poll.options : [];
-    const selected = ownAnswers.get(poll.id);
     const results = poll.results || {};
     options.forEach((option, index) => {
       const row = document.createElement("div");
       row.className = "presentation-follow-poll-option";
-      const button = textElement("button", String(option), "presentation-follow-poll-choice");
+      const button = textElement("button", `🗳️ ${String(option)}`, "presentation-follow-poll-choice");
       button.type = "button";
       button.disabled = !poll.open || selected !== undefined;
       if (selected === index) button.setAttribute("aria-pressed", "true");
@@ -300,27 +295,69 @@
       const button = textElement("button", `${label} · ${Number(counts[reaction] || 0)}`, "presentation-follow-reaction");
       button.type = "button";
       button.setAttribute("aria-label", label);
+      button.setAttribute("aria-pressed", String(ownReactions.get("reaction") === reaction));
       button.addEventListener("click", () => void submitInteraction({ type: "reaction", reaction }));
       reactions.append(button);
     });
-    reactions.hidden = false;
+  }
+
+  function renderQuestions(questions = []) {
+    questionList.replaceChildren();
+    questionCount.textContent = questions.length ? `· ${questions.length}` : "";
+    questions.forEach((question) => {
+      const card = document.createElement("article");
+      card.className = "presentation-follow-question-item";
+      card.append(textElement("p", question.question));
+      card.append(textElement("small", question.teacher_feedback
+        ? `👩‍🏫 Teacher: ${question.teacher_feedback}`
+        : "Waiting for your teacher's reply"));
+      questionList.append(card);
+    });
   }
 
   async function submitInteraction(interaction) {
+    if (interactionPending) return;
+    interactionPending = true;
+    interactionRevision++;
+    if (interaction.type === "poll") pollPanel.hidden = true;
+    let submitted = false;
+    [...pollPanel.querySelectorAll("button"), ...reactions.querySelectorAll("button")].forEach((button) => {
+      button.disabled = true;
+    });
+    status.textContent = interaction.type === "question" ? "Sending your question…" : "Sending your response…";
     try {
       const response = await fetch(`${basePath}/api/presentation-simulations/${encodeURIComponent(token)}/interaction`, {
         method: "POST",
         credentials: "same-origin",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ ...interaction, participant_id: participantId })
+        body: JSON.stringify({
+          ...interaction,
+          participant_id: participantId,
+          participant_name: participantName
+        })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Your response could not be sent.");
-      if (interaction.type === "poll") ownAnswers.set(interaction.poll_id, interaction.answer_index);
+      if (interaction.type === "poll") {
+        ownAnswers.set(interaction.poll_id, interaction.answer_index);
+        lastPollKey = "";
+      }
+      if (interaction.type === "reaction") ownReactions.set("reaction", interaction.reaction);
+      if (interaction.type === "question") questionForm.elements.namedItem("question").value = "";
       latestState = data;
       renderState(data);
+      status.textContent = interaction.type === "poll"
+        ? "✅ Your answer has been sent!"
+        : interaction.type === "question" ? "✅ Your question has been sent!" : "✅ Response received";
+      submitted = true;
     } catch (error) {
       status.textContent = error instanceof Error ? error.message : "Your response could not be sent. Please try again.";
+    } finally {
+      interactionPending = false;
+      if (!submitted && latestState) {
+        renderPoll(latestState.active_poll);
+        renderReactions(latestState.reaction_counts);
+      }
     }
   }
 
@@ -341,6 +378,8 @@
 
   function showEnded(message) {
     stopped = true;
+    joinGate.hidden = true;
+    experience.hidden = false;
     if (timer !== null) window.clearTimeout(timer);
     if (countdownTimer !== null) window.clearInterval(countdownTimer);
     status.textContent = message;
@@ -348,7 +387,11 @@
     count.textContent = "";
     pollPanel.hidden = true;
     reactions.hidden = true;
+    questionForm.querySelector("textarea").disabled = true;
+    questionForm.querySelector("button").disabled = true;
+    paceToggle.hidden = true;
     progress.style.width = "0";
+    stageResizeObserver?.disconnect();
   }
 
   function renderSlide(data) {
@@ -365,42 +408,111 @@
     const slide = data.slide || {};
     const article = document.createElement("article");
     article.className = `presentation-slide-preview presentation-theme-${theme} presentation-template-${template}`;
-    article.append(textElement("h1", String(slide.title || "Presentation slide")));
+    const header = document.createElement("header");
+    const slideNumber = textElement("span", `SLIDE ${String(data.active_slide + 1).padStart(2, "0")}`);
+    const metadata = textElement("small", `${data.subject || ""} · ${data.year || ""}`);
+    header.append(slideNumber, metadata);
+    article.append(header, textElement("h4", String(slide.title || "Presentation slide")));
     const mode = ["all", "group", "item", "timed"].includes(data.reveal_mode) ? data.reveal_mode : "all";
-    const units = contentUnits(slide, mode);
-    const visibleCount = units.length;
-    units.forEach((unit) => {
-      if (unit.type === "points") {
+    const points = Array.isArray(slide.key_points)
+      ? slide.key_points.filter((point) => typeof point === "string" && point.trim()).slice(0, 12)
+      : [];
+    if (points.length) {
       const list = document.createElement("ul");
-        unit.value.forEach((point) => list.append(textElement("li", point)));
+      points.forEach((point) => list.append(textElement("li", point)));
       article.append(list);
-      } else if (unit.type === "visual") {
-        const visual = renderPresentationVisual(unit.value);
-        if (visual) article.append(visual);
-      } else if (unit.type === "suggestion") {
-        article.append(textElement("p", `Visual: ${String(unit.value)}`));
-      } else if (unit.type === "activity") {
-        article.append(textElement("p", String(unit.value)));
+    }
+    const visual = slide.visual ? renderPresentationVisual(slide.visual) : null;
+    let image = null;
+    if (slide.image && typeof slide.image === "object") {
+      try {
+        const imageUrl = new URL(String(slide.image.url || ""));
+        const sourceUrl = new URL(String(slide.image.source_url || ""));
+        if (imageUrl.protocol === "https:"
+          && ["upload.wikimedia.org", "thumb.wikimedia.org"].includes(imageUrl.hostname)
+          && sourceUrl.protocol === "https:" && sourceUrl.hostname === "commons.wikimedia.org") {
+          image = document.createElement("figure");
+          image.className = "presentation-slide-image";
+          const imageElement = document.createElement("img");
+          imageElement.src = imageUrl.href;
+          imageElement.alt = String(slide.image.alt || "Curriculum-related classroom image");
+          imageElement.loading = "lazy";
+          imageElement.referrerPolicy = "no-referrer";
+          const caption = document.createElement("figcaption");
+          const sourceLink = document.createElement("a");
+          sourceLink.href = sourceUrl.href;
+          sourceLink.target = "_blank";
+          sourceLink.rel = "noopener noreferrer";
+          sourceLink.textContent = "Wikimedia Commons";
+          caption.append(sourceLink);
+          if (slide.image.attribution) caption.append(document.createTextNode(` · ${String(slide.image.attribution)}`));
+          try {
+            const licenseUrl = new URL(String(slide.image.license_url || ""));
+            if (licenseUrl.protocol === "https:" && ["creativecommons.org", "www.gnu.org"].includes(licenseUrl.hostname)) {
+              const licenseLink = document.createElement("a");
+              licenseLink.href = licenseUrl.href;
+              licenseLink.target = "_blank";
+              licenseLink.rel = "noopener noreferrer";
+              licenseLink.textContent = String(slide.image.license || "License");
+              caption.append(document.createTextNode(" · "), licenseLink);
+            } else if (slide.image.license) {
+              caption.append(document.createTextNode(` · ${String(slide.image.license)}`));
+            }
+          } catch {
+            if (slide.image.license) caption.append(document.createTextNode(` · ${String(slide.image.license)}`));
+          }
+          image.append(imageElement, caption);
+        }
+      } catch {
+        image = null;
       }
-    });
+    }
+    if (image && visual) {
+      const media = document.createElement("div");
+      media.className = "presentation-media-column";
+      media.append(image, visual);
+      article.append(media);
+    } else if (image || visual) {
+      article.append(image || visual);
+    }
+    const detail = document.createElement("p");
+    if (slide.activity) detail.append(document.createTextNode(String(slide.activity)));
+    if (slide.activity && slide.visual_suggestion) detail.append(document.createElement("br"));
+    if (slide.visual_suggestion) {
+      const label = document.createElement("b");
+      label.textContent = "Visual:";
+      detail.append(label, document.createTextNode(` ${String(slide.visual_suggestion)}`));
+    }
+    article.append(detail);
     if (mode !== "all" && Number(data.reveal_total) > 0) {
       article.append(textElement("small", `Content ${Math.min(Number(data.reveal_step) || 0, Number(data.reveal_total))} of ${data.reveal_total}`, "presentation-follow-reveal-progress"));
     }
-    renderAnnotations(article, data);
     stage.replaceChildren(article);
-    renderPoll(data.active_poll);
-    renderReactions(data.reaction_counts);
-    updateTimer(data);
+    renderPointer(data.pointer);
+    requestAnimationFrame(() => fitSlideToStage(article));
   }
+
+  function fitSlideToStage(article = stage.querySelector(".presentation-slide-preview")) {
+    if (!article || !stage.clientWidth || !stage.clientHeight) return;
+    const width = Math.min(1100, stage.clientWidth, stage.clientHeight * 16 / 9);
+    article.style.width = `${width}px`;
+    article.style.height = `${width * 9 / 16}px`;
+  }
+  const stageResizeObserver = typeof ResizeObserver === "function"
+    ? new ResizeObserver(() => requestAnimationFrame(fitSlideToStage))
+    : null;
+  stageResizeObserver?.observe(stage);
 
   function renderState(data) {
     if (data.status !== "active") {
       showEnded("The teacher has ended this presentation.");
       return;
     }
+    Object.entries(data.own_poll_answers || {}).forEach(([pollId, answerIndex]) => ownAnswers.set(pollId, Number(answerIndex)));
+    paceToggle.hidden = false;
     const slideKey = JSON.stringify([
-      data.active_slide, data.slide_count, data.title, data.reveal_mode, data.reveal_step,
-      data.annotations, data.pointer, data.active_poll, data.reaction_counts, data.timer_ends_at
+      data.active_slide, data.slide_count, data.title, data.subject, data.year, data.template,
+      data.visual_theme, data.reveal_mode, data.reveal_step, data.slide
     ]);
     if (slideKey !== lastSlideKey) {
       renderSlide(data);
@@ -408,12 +520,41 @@
     } else {
       title.textContent = data.title || "Live classroom presentation";
     }
+    renderPointer(data.pointer);
+    const pollKey = JSON.stringify(data.active_poll);
+    if (pollKey !== lastPollKey) {
+      lastPollKey = pollKey;
+      renderPoll(data.active_poll);
+    }
+    const reactionKey = JSON.stringify(data.reaction_counts || {});
+    if (reactionKey !== lastReactionKey) {
+      lastReactionKey = reactionKey;
+      renderReactions(data.reaction_counts);
+    }
+    const questions = Array.isArray(data.questions) ? data.questions : [];
+    const questionsKey = JSON.stringify(questions);
+    if (questionsKey !== lastQuestionsKey) {
+      lastQuestionsKey = questionsKey;
+      renderQuestions(questions);
+    }
+    if (data.timer_ends_at !== lastTimerKey) {
+      lastTimerKey = data.timer_ends_at || "";
+      updateTimer(data);
+    }
   }
 
   async function poll() {
     if (stopped || document.hidden) return;
+    if (interactionPending) {
+      timer = window.setTimeout(poll, 200);
+      return;
+    }
+    if (pollInFlight) return;
+    pollInFlight = true;
+    const revision = interactionRevision;
     try {
-      const response = await fetch(`${basePath}/api/presentation-simulations/${encodeURIComponent(token)}`, {
+      const query = new URLSearchParams({ participant_id: participantId });
+      const response = await fetch(`${basePath}/api/presentation-simulations/${encodeURIComponent(token)}?${query}`, {
         credentials: "same-origin",
         headers: { Accept: "application/json" },
         cache: "no-store"
@@ -430,15 +571,22 @@
         showEnded("The teacher has ended this presentation.");
         return;
       }
+      if (revision !== interactionRevision) {
+        timer = window.setTimeout(poll, 50);
+        return;
+      }
       const reconnected = !connected;
       connected = true;
+      latestState = data;
       renderState(data);
       if (reconnected && lastSlideKey) status.textContent = "Connection restored · following your teacher";
     } catch (error) {
       connected = false;
       status.textContent = error instanceof Error ? `Reconnecting… ${error.message}` : "Reconnecting to the live presentation…";
+    } finally {
+      pollInFlight = false;
     }
-    if (!stopped) timer = window.setTimeout(poll, document.hidden ? 4000 : 1000);
+    if (!stopped) timer = window.setTimeout(poll, document.hidden ? 4000 : 180);
   }
 
   function getParticipantId() {
@@ -463,6 +611,15 @@
       console.warn("A temporary student response identity could not be saved.", error);
       return createId();
     }
+
+    function storedParticipantName() {
+      try {
+        return window.sessionStorage.getItem(`akademi-presentation-name-${token}`) || "";
+      } catch (error) {
+        console.warn("The student name could not be restored from this browser session.", error);
+        return "";
+      }
+    }
   }
 
   if (!/^[a-fA-F0-9]{64}$/.test(token)) {
@@ -471,11 +628,45 @@
   }
   try {
     participantId = getParticipantId();
+    const savedName = storedParticipantName().trim();
+    participantName = savedName.length <= 80 && !/[\u0000-\u001f\u007f]/.test(savedName) ? savedName : "";
   } catch (error) {
     console.error("A secure student response identity could not be created.", error);
     showEnded("This browser could not create a secure response identity. Refresh and try again.");
     return;
   }
+  const joinName = joinForm.elements.namedItem("name");
+  if (participantName) joinName.value = participantName;
+  else status.textContent = "Enter your name to join the presentation.";
+  const startFollowing = () => {
+    joinGate.hidden = true;
+    experience.hidden = false;
+    if (latestState) renderState(latestState);
+    void poll();
+  };
+  if (participantName) startFollowing();
+  joinForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = joinName.value.trim();
+    if (!name || name.length > 80) {
+      joinName.setCustomValidity("Enter a name using 1 to 80 characters.");
+      joinName.reportValidity();
+      return;
+    }
+    joinName.setCustomValidity("");
+    participantName = name;
+    try {
+      window.sessionStorage.setItem(`akademi-presentation-name-${token}`, participantName);
+    } catch (error) {
+      console.warn("The student name could not be saved for this browser session.", error);
+    }
+    startFollowing();
+  });
+  questionForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const question = questionForm.elements.namedItem("question").value.trim();
+    if (question) void submitInteraction({ type: "question", question });
+  });
   fullscreenButton.addEventListener("click", async () => {
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
@@ -484,11 +675,26 @@
       status.textContent = error instanceof Error ? `Full screen is unavailable: ${error.message}` : "Full screen is unavailable in this browser.";
     }
   });
+  document.addEventListener("fullscreenchange", () => {
+    const active = Boolean(document.fullscreenElement);
+    fullscreenButton.setAttribute("aria-pressed", String(active));
+    fullscreenButton.innerHTML = active
+      ? '<i class="fa-solid fa-compress" aria-hidden="true"></i><span>Exit full screen</span>'
+      : '<i class="fa-solid fa-expand" aria-hidden="true"></i><span>Full screen</span>';
+  });
+  paceToggle.addEventListener("click", () => {
+    const expanded = paceToggle.getAttribute("aria-expanded") !== "true";
+    paceToggle.setAttribute("aria-expanded", String(expanded));
+    reactions.hidden = !expanded;
+    paceToggle.querySelector("span").textContent = expanded ? "Hide pace" : "Show pace";
+    paceToggle.querySelector("i").className = `fa-solid ${expanded ? "fa-eye-slash" : "fa-gauge-high"}`;
+  });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && !stopped) {
       if (timer !== null) window.clearTimeout(timer);
       void poll();
     }
   });
-  void poll();
+  window.addEventListener("resize", () => requestAnimationFrame(() => fitSlideToStage()));
+  window.visualViewport?.addEventListener("resize", () => requestAnimationFrame(() => fitSlideToStage()));
 })();

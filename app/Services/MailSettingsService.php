@@ -26,18 +26,23 @@ final class MailSettingsService
                 'port' => $values['port'],
                 'username' => $values['username'],
                 'password_configured' => $values['password'] !== '',
+                'password_usable' => $values['password'] !== '' || $values['username'] === '',
                 'encryption' => $values['encryption'],
                 'from_address' => $values['from_address'],
                 'from_name' => $values['from_name'],
             ];
         }
+        $passwordConfigured = $config['encrypted_password'] !== null && $config['encrypted_password'] !== '';
         return [
             'configured' => true,
             'source' => 'database',
             'host' => $config['host'],
             'port' => (int)$config['port'],
             'username' => $config['username'],
-            'password_configured' => $config['encrypted_password'] !== null && $config['encrypted_password'] !== '',
+            'password_configured' => $passwordConfigured,
+            'password_usable' => !$passwordConfigured
+                ? (string)$config['username'] === ''
+                : SecretCipher::canDecrypt((string)$config['encrypted_password'], 'akademi-mail-secret-v1'),
             'encryption' => $config['encryption'],
             'from_address' => $config['from_address'],
             'from_name' => $config['from_name'],
@@ -77,8 +82,10 @@ final class MailSettingsService
             throw new RuntimeException('Enter a sender name of up to 120 characters.', 422);
         }
 
-        $current = $this->secretConfig();
-        $effectivePassword = $password !== '' ? $password : $current['password'];
+        $effectivePassword = $password;
+        if ($password === '' && $username !== '') {
+            $effectivePassword = $this->secretConfig()['password'];
+        }
         if ($username !== '' && $effectivePassword === '') {
             throw new RuntimeException('Enter the SMTP password or configure a server that does not require authentication.', 422);
         }
@@ -135,13 +142,28 @@ final class MailSettingsService
         if (!$config) {
             return $this->environmentConfig();
         }
+        try {
+            $password = $config['encrypted_password'] === null || $config['encrypted_password'] === ''
+                ? ''
+                : SecretCipher::decrypt((string)$config['encrypted_password'], 'akademi-mail-secret-v1');
+        } catch (RuntimeException $exception) {
+            $environment = $this->environmentConfig();
+            if ($environment['host'] !== ''
+                && filter_var($environment['from_address'], FILTER_VALIDATE_EMAIL) !== false
+                && ($environment['username'] === '' || $environment['password'] !== '')) {
+                return $environment;
+            }
+            throw new RuntimeException(
+                'The saved SMTP password cannot be decrypted with the current APP_KEY. Restore the APP_KEY used when it was saved, or re-enter the SMTP password in Super Admin email settings before requesting another sign-in code.',
+                503,
+                $exception
+            );
+        }
         return [
             'host' => (string)$config['host'],
             'port' => (int)$config['port'],
             'username' => (string)$config['username'],
-            'password' => $config['encrypted_password'] === null || $config['encrypted_password'] === ''
-                ? ''
-                : SecretCipher::decrypt((string)$config['encrypted_password'], 'akademi-mail-secret-v1'),
+            'password' => $password,
             'encryption' => (string)$config['encryption'],
             'from_address' => (string)$config['from_address'],
             'from_name' => (string)$config['from_name'],

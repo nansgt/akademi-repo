@@ -1,5 +1,7 @@
 FROM php:8.4-apache
 
+COPY docker-php.ini /usr/local/etc/php/conf.d/zz-akademi.ini
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev \
     libonig-dev \

@@ -1674,53 +1674,119 @@
   });
 
   function uploadWithProgress() {
-    return new Promise((resolve, reject) => {
+    const apiBase = root.dataset.listUrl.replace(/\/$/, "");
+    const requestJson = async (path, payload) => {
+      let response;
+      try {
+        response = await fetch(`${apiBase}/upload/${path}`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrf
+          },
+          body: JSON.stringify(payload)
+        });
+      } catch {
+        throw new Error(path === "complete"
+          ? "The connection was lost while finalizing the upload. Refresh the library before retrying; completed files are checked for duplicates."
+          : "The connection was lost while preparing the upload. Confirm the app is reachable, then try again.");
+      }
+      let body = {};
+      try { body = await response.json(); } catch { /* The response may not contain JSON. */ }
+      if (!response.ok) {
+        throw new Error(`${body.error || "Resource upload failed."} (HTTP ${response.status}).`);
+      }
+      return body;
+    };
+    const sendChunk = (uploadId, fileIndex, chunkIndex, chunk, completedBytes, totalBytes) => new Promise((resolve, reject) => {
       const request = new XMLHttpRequest();
-      let settled = false;
-      request.open("POST", `${root.dataset.listUrl}/upload`);
+      const formData = new FormData();
+      formData.append("upload_id", uploadId);
+      formData.append("file_index", String(fileIndex));
+      formData.append("chunk_index", String(chunkIndex));
+      formData.append("chunk", chunk, "resource-part.bin");
+      request.open("POST", `${apiBase}/upload/chunk`);
       request.responseType = "json";
-      request.timeout = 600_000;
+      request.timeout = 120_000;
       request.withCredentials = true;
       request.setRequestHeader("Accept", "application/json");
       request.setRequestHeader("X-CSRF-Token", csrf);
       request.upload.addEventListener("progress", (event) => {
-        if (!event.lengthComputable) {
-          uploadProgressLabel.textContent = "Uploading selected resources…";
-          return;
-        }
-        const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+        if (!event.lengthComputable) return;
+        const currentBytes = Math.min(chunk.size, event.loaded / event.total * chunk.size);
+        const percent = Math.min(99, Math.round((completedBytes + currentBytes) / totalBytes * 100));
         uploadProgressBar.value = percent;
-        uploadProgressLabel.textContent = percent < 100
-          ? `Uploading resources · ${percent}%`
-          : "File transfer complete · saving resources…";
+        uploadProgressLabel.textContent = `Uploading resources · ${percent}%`;
       });
-      request.upload.addEventListener("load", () => {
-        uploadProgressBar.value = 100;
-        uploadProgressLabel.textContent = "File transfer complete · saving resources…";
-      });
-      const settle = (callback, value) => {
-        if (settled) return;
-        settled = true;
-        callback(value);
-      };
-      request.addEventListener("readystatechange", () => {
-        if (request.readyState !== XMLHttpRequest.DONE) return;
-        let body = request.response;
-        if (!body || typeof body !== "object") {
-          try { body = JSON.parse(request.responseText); } catch { body = {}; }
-        }
-        if (request.status < 200 || request.status >= 300) {
-          const reference = body.request_id ? ` Reference: ${body.request_id}.` : "";
-          settle(reject, new Error(`${body.error || "Resource upload failed."} (HTTP ${request.status}).${reference}`));
+      request.addEventListener("load", () => {
+        const body = request.response && typeof request.response === "object" ? request.response : {};
+        if (request.status >= 200 && request.status < 300) {
+          resolve();
           return;
         }
-        settle(resolve, body);
-      });
-      request.addEventListener("error", () => settle(reject, new Error("Resource upload could not reach the server. Check your connection and try again.")));
-      request.addEventListener("abort", () => settle(reject, new Error("Resource upload was canceled before it completed.")));
-      request.addEventListener("timeout", () => settle(reject, new Error("Resource upload timed out. Try again with fewer or smaller files.")));
-      request.send(new FormData(uploadForm));
+        const error = new Error(request.status === 0
+          ? "The connection dropped while sending an upload chunk."
+          : `${body.error || "Resource upload failed."} (HTTP ${request.status}).`);
+        error.retryable = request.status === 0 || request.status >= 500;
+        reject(error);
+      }, { once: true });
+      request.addEventListener("error", () => {
+        const error = new Error("The connection dropped while sending an upload chunk.");
+        error.retryable = true;
+        reject(error);
+      }, { once: true });
+      request.addEventListener("timeout", () => {
+        const error = new Error("An upload chunk timed out.");
+        error.retryable = true;
+        reject(error);
+      }, { once: true });
+      request.send(formData);
     });
+
+    return (async () => {
+      const totalBytes = Array.from(uploadFiles.files || []).reduce((sum, file) => sum + file.size, 0);
+      const metadata = {};
+      for (const [rawName, value] of new FormData(uploadForm).entries()) {
+        if (typeof value !== "string" || rawName === uploadFiles.name) continue;
+        const name = rawName.replace(/\[\]$/, "");
+        if (Object.hasOwn(metadata, name)) {
+          metadata[name] = Array.isArray(metadata[name]) ? [...metadata[name], value] : [metadata[name], value];
+        } else {
+          metadata[name] = value;
+        }
+      }
+      const started = await requestJson("start", {
+        files: Array.from(uploadFiles.files || [], (file) => ({ name: file.name, size: file.size })),
+        metadata
+      });
+      let completedBytes = 0;
+      for (const [fileIndex, file] of Array.from(uploadFiles.files || []).entries()) {
+        const chunkCount = Math.ceil(file.size / started.chunk_size);
+        for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++) {
+          const start = chunkIndex * started.chunk_size;
+          const chunk = file.slice(start, Math.min(file.size, start + started.chunk_size));
+          for (let attempt = 0; ; attempt++) {
+            try {
+              await sendChunk(started.upload_id, fileIndex, chunkIndex, chunk, completedBytes, totalBytes);
+              break;
+            } catch (error) {
+              if (!error.retryable || attempt >= 2) {
+                throw new Error(`${error.message} The upload was not finalized; retry it from the library.`);
+              }
+              await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+            }
+          }
+          completedBytes += chunk.size;
+          uploadProgressBar.value = Math.min(99, Math.round(completedBytes / totalBytes * 100));
+          uploadProgressLabel.textContent = `Uploading resources · ${uploadProgressBar.value}%`;
+        }
+      }
+      uploadProgressLabel.textContent = "File transfer complete · saving resources…";
+      const completed = await requestJson("complete", { upload_id: started.upload_id });
+      return completed;
+    })();
   }
 
   uploadForm.addEventListener("submit", async (event) => {

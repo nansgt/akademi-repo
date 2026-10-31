@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/notifications.css?v=22">
-  <link rel="stylesheet" href="assets/styles.css?v=113">
+  <link rel="stylesheet" href="assets/styles.css?v=125">
   <link rel="stylesheet" href="assets/fontawesome/css/fontawesome.min.css">
   <link rel="stylesheet" href="assets/fontawesome/css/solid.min.css">
   <link rel="stylesheet" href="assets/appearance.css?v=9">
@@ -439,7 +439,7 @@
         </section>
 
         <section class="page" id="page-slides" aria-labelledby="slides-title">
-          <div class="page-heading"><div><div class="eyebrow">TEACH IT VISUALLY</div><h1 id="slides-title">Presentation outline</h1><p class="lead">Select curriculum weeks to build an editable, curriculum-aware slide sequence.</p></div><button class="button button-primary" id="slides-new-button" type="button">Create presentation</button></div>
+          <div class="page-heading"><div><div class="eyebrow">TEACH IT VISUALLY</div><h1 id="slides-title">Presentation outline</h1><p class="lead">Select curriculum weeks to build an editable, curriculum-aware slide sequence.</p></div><div class="form-actions"><button class="button button-secondary" id="slides-history-button" type="button"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Presentation history</button><button class="button button-primary" id="slides-new-button" type="button">Create presentation</button></div></div>
           <div class="notice notice-soft"><span class="notice-symbol"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#fa-file-lines"></use></svg></span><div class="notice-copy"><strong>Editable outline with PowerPoint export</strong><p>Generate an outline and export it as a presentation (.pptx), Word document, PDF or print copy. AI-generated images are not included.</p></div></div>
           <div id="slides-library" class="planning-library" aria-live="polite"></div>
           <dialog id="slides-dialog" class="lesson-wizard-dialog planning-wizard-dialog" aria-labelledby="slides-dialog-title">
@@ -447,7 +447,7 @@
           <form id="slides-form" class="form-card form-layout">
             <div class="form-grid">
               <label class="field"><span>SHS year <b>*</b></span><select name="year" required><option value="">Choose an SHS year</option><option>SHS Year 1</option><option>SHS Year 2</option><option>SHS Year 3</option></select></label>
-              <label class="field"><span>Subject <b>*</b></span><select name="subject" required><option value="">Choose a subject</option></select></label>
+              <label class="field"><span>Subject <b>*</b></span><input name="subject" list="ghana-subject-options" autocomplete="off" required placeholder="Search or type a subject"></label>
               <label class="field"><span>Presentation template</span><select name="template"><option value="lesson">Clear lesson sequence</option><option value="inquiry">Inquiry &amp; discovery</option><option value="worked">Worked examples</option><option value="discussion">Discussion &amp; collaboration</option><option value="project">Project-based learning</option><option value="revision">Revision &amp; retrieval practice</option><option value="flipped">Flipped classroom</option></select></label>
               <label class="field"><span>Slide design</span><select name="visualTheme"><option value="modern">Modern classroom</option><option value="editorial">Editorial</option><option value="vibrant">Vibrant workshop</option><option value="data">Data studio</option><option value="minimal">Minimal</option></select></label>
               <label class="field"><span>Number of slides</span><input name="slides" type="number" min="5" max="20" value="8"></label>
@@ -460,10 +460,15 @@
               <label class="field field-wide"><span>Learning outcomes · one per line</span><textarea name="outcomes" rows="3" placeholder="Select weeks to draft outcomes; add or edit any outcome"></textarea><small class="field-help">Drafted from the selected topics and focal areas. Review and adapt for your learners.</small></label>
               <label class="field field-wide"><span>Learning indicators · one per line</span><textarea name="indicators" rows="3" placeholder="Indicators linked to selected curriculum weeks; add your own"></textarea></label>
               <label class="field field-wide"><span>Key teaching points · one per line</span><textarea name="points" required rows="5" placeholder="Auto-generated from selected topics and focal areas. Add, edit or remove points."></textarea></label>
+              <label class="field field-wide"><span>Lecture notes · one per line</span><textarea name="lectureNotes" rows="4" placeholder="Add teacher-only explanations, examples, prompts or reminders. Notes are not shown to students."></textarea><small class="field-help">Notes are distributed across the slides and remain private in presenter view.</small></label>
               <label class="field field-wide"><span>Data for a chart or table · optional</span><textarea name="visualData" rows="3" placeholder="Add a header row and data rows, separating columns with |&#10;Example: Category | Value&#10;Group A | 12&#10;Group B | 18"></textarea><small class="field-help">Charts and tables use the values you provide. The app will not invent real-world statistics.</small></label>
             </div>
             <div class="form-footer"><span class="save-note">Curriculum-derived suggestions are editable and should be reviewed. AI generation is optional.</span><div class="form-actions"><button type="button" class="button button-quiet" data-ai-generate="slides">Generate with AI</button><button type="submit" class="button button-primary">Build slide outline <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#fa-chevron-right"></use></svg></button></div></div>
           </form>
+          </dialog>
+          <dialog id="slides-history-dialog" class="lesson-wizard-dialog slides-history-dialog" aria-labelledby="slides-history-title">
+            <div class="lesson-wizard-header"><div><span class="eyebrow">YOUR LIVE SESSIONS</span><h2 id="slides-history-title">Presentation history</h2><p>Review saved slides, student participation, polls and questions from previous sessions.</p></div><button class="lesson-wizard-close" type="button" data-close-slides-history aria-label="Close presentation history">&times;</button></div>
+            <div class="slides-history-content"><nav class="slides-history-list" data-slides-history-list aria-label="Past presentations"></nav><section class="slides-history-detail" data-slides-history-detail aria-live="polite"><p class="field-help">Choose a presentation to review its saved session details.</p></section></div>
           </dialog>
           <div id="slides-output" class="output-region" aria-live="polite"></div>
         </section>
@@ -539,11 +544,11 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="assets/theme.js?v=2" defer></script>
   <script src="assets/notifications.js?v=23" defer></script>
-  <script src="assets/progress.js?v=5" defer></script>
-  <script src="assets/assessment-export.js?v=40" defer></script>
+  <script src="assets/progress.js?v=6" defer></script>
+  <script src="assets/assessment-export.js?v=41" defer></script>
   <script src="assets/assessment-rendering.js?v=2" defer></script>
   <script src="assets/auth.js?v=23" defer></script>
-  <script src="assets/app.js?v=173" defer></script>
+  <script src="assets/app.js?v=193" defer></script>
   <script src="assets/curriculum-docx-renderer.js?v=1" defer></script>
   <script src="assets/curriculum-resource-reader.js?v=10" defer></script>
   <script src="assets/curriculum-resources.js?v=3" defer></script>

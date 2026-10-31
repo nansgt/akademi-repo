@@ -40,7 +40,7 @@ header('X-Frame-Options: ' . ($isAdminCurriculumFile ? 'SAMEORIGIN' : 'DENY'));
 $stylePolicy = in_array($path, ['/', '/index.html', '/admin/curriculum'], true)
     ? "style-src 'self' 'unsafe-inline'"
     : "style-src 'self'";
-header("Content-Security-Policy: default-src 'self'; script-src 'self'; {$stylePolicy}; img-src 'self' data: blob: https:; connect-src 'self'; frame-src 'self' blob:; form-action 'self'; base-uri 'self'; frame-ancestors {$framePolicy}; object-src 'none'");
+header("Content-Security-Policy: default-src 'self'; script-src 'self'; {$stylePolicy}; img-src 'self' data: blob: https:; connect-src 'self' https://commons.wikimedia.org; frame-src 'self' blob:; form-action 'self'; base-uri 'self'; frame-ancestors {$framePolicy}; object-src 'none'");
 $auth = new AuthService();
 
 function page_auth(string $mode, string $email = '', string $error = ''): never
@@ -192,7 +192,10 @@ try {
         exit;
     }
     if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})$#D', $path, $matches) && $method === 'GET') {
-        json_response((new \Akademi\Services\PresentationSimulationService())->read($matches[1]));
+        json_response((new \Akademi\Services\PresentationSimulationService())->read(
+            $matches[1],
+            isset($_GET['participant_id']) ? (string)$_GET['participant_id'] : null
+        ));
     }
     if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})/interaction$#D', $path, $matches) && $method === 'POST') {
         json_response((new \Akademi\Services\PresentationSimulationService())->interact($matches[1], request_json()));
@@ -487,6 +490,12 @@ try {
         json_response(['document' => (new WorkspaceService())->createDocument((int)$user['id'], request_json())], 201);
     }
 
+    if ($path === '/api/teacher/presentation-simulations' && $method === 'GET') {
+        $user = require_user($auth);
+        $auth->requireRole($user, 'teacher');
+        json_response((new \Akademi\Services\PresentationSimulationService())->history((int)$user['id']));
+    }
+
     if ($path === '/api/teacher/presentation-simulations' && $method === 'POST') {
         Csrf::verifyRequest();
         $user = require_user($auth);
@@ -513,6 +522,26 @@ try {
         json_response((new \Akademi\Services\PresentationSimulationService())->ownerState(
             (int)$user['id'],
             (int)$matches[1]
+        ));
+    }
+    if (preg_match('#^/api/teacher/presentation-simulations/([1-9][0-9]*)/history$#D', $path, $matches) && $method === 'GET') {
+        $user = require_user($auth);
+        $auth->requireRole($user, 'teacher');
+        json_response((new \Akademi\Services\PresentationSimulationService())->historyDetails(
+            (int)$user['id'],
+            (int)$matches[1]
+        ));
+    }
+    if (preg_match('#^/api/teacher/presentation-simulations/([1-9][0-9]*)/questions/([1-9][0-9]*)$#D', $path, $matches) && $method === 'PUT') {
+        Csrf::verifyRequest();
+        $user = require_user($auth);
+        $auth->requireRole($user, 'teacher');
+        $input = request_json();
+        json_response((new \Akademi\Services\PresentationSimulationService())->replyToQuestion(
+            (int)$user['id'],
+            (int)$matches[1],
+            (int)$matches[2],
+            $input['feedback'] ?? null
         ));
     }
 
@@ -1579,6 +1608,49 @@ try {
             }
         }
         json_response(['documents' => $documents]);
+    }
+
+    if ($path === '/api/admin/curriculum/upload/start' && $method === 'POST') {
+        Csrf::verifyRequest();
+        $user = require_user($auth);
+        $auth->requireRole($user, 'superadmin');
+        $input = request_json();
+        json_response((new \Akademi\Services\CurriculumChunkUploadService())->begin(
+            is_array($input['files'] ?? null) ? $input['files'] : [],
+            is_array($input['metadata'] ?? null) ? $input['metadata'] : [],
+            (int)$user['id']
+        ), 201);
+    }
+
+    if ($path === '/api/admin/curriculum/upload/chunk' && $method === 'POST') {
+        Csrf::verifyRequest();
+        $user = require_user($auth);
+        $auth->requireRole($user, 'superadmin');
+        $fileIndex = filter_var($_POST['file_index'] ?? null, FILTER_VALIDATE_INT);
+        $chunkIndex = filter_var($_POST['chunk_index'] ?? null, FILTER_VALIDATE_INT);
+        if ($fileIndex === false || $chunkIndex === false) {
+            throw new RuntimeException('The upload chunk position is invalid.', 422);
+        }
+        json_response((new \Akademi\Services\CurriculumChunkUploadService())->receive(
+            (string)($_POST['upload_id'] ?? ''),
+            $fileIndex,
+            $chunkIndex,
+            is_array($_FILES['chunk'] ?? null) ? $_FILES['chunk'] : [],
+            (int)$user['id']
+        ));
+    }
+
+    if ($path === '/api/admin/curriculum/upload/complete' && $method === 'POST') {
+        Csrf::verifyRequest();
+        $user = require_user($auth);
+        $auth->requireRole($user, 'superadmin');
+        $input = request_json();
+        json_response([
+            'result' => (new \Akademi\Services\CurriculumChunkUploadService())->complete(
+                (string)($input['upload_id'] ?? ''),
+                (int)$user['id']
+            ),
+        ]);
     }
 
     if ($path === '/api/admin/curriculum/upload' && $method === 'POST') {

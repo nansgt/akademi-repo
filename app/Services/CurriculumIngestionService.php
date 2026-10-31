@@ -52,8 +52,24 @@ final class CurriculumIngestionService
         return $this->import($root, $files, $retryIncomplete);
     }
 
-    public function upload(array $uploads, array $metadata, int $actorUserId): array
-    {
+    public function upload(
+        array $uploads,
+        array $metadata,
+        int $actorUserId,
+        ?string $trustedStagingRoot = null
+    ): array {
+        if ($trustedStagingRoot !== null) {
+            $trustedStagingRoot = realpath($trustedStagingRoot);
+            $stagingRoot = realpath(AKADEMI_STORAGE . DIRECTORY_SEPARATOR . 'curriculum'
+                . DIRECTORY_SEPARATOR . 'upload-staging');
+            if ($trustedStagingRoot === false || $stagingRoot === false
+                || !str_starts_with(
+                    strtolower(rtrim($trustedStagingRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR),
+                    strtolower(rtrim($stagingRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)
+                )) {
+                throw new RuntimeException('The staged upload location is not available.', 422);
+            }
+        }
         if (!isset($uploads['name'], $uploads['tmp_name'], $uploads['error'], $uploads['size'])
             || !is_array($uploads['name']) || !is_array($uploads['tmp_name'])
             || !is_array($uploads['error']) || !is_array($uploads['size'])) {
@@ -134,8 +150,18 @@ final class CurriculumIngestionService
             if (!in_array($extension, ['pdf', 'txt', 'md', 'csv', 'docx'], true)) {
                 throw new RuntimeException('Only PDF, DOCX, TXT, MD and CSV resource files are supported.', 422);
             }
-            if ($temporaryPath === '' || !is_uploaded_file($temporaryPath)) {
+            if ($temporaryPath === '' || ($trustedStagingRoot === null && !is_uploaded_file($temporaryPath))) {
                 throw new RuntimeException('An uploaded file could not be safely validated. Please select it again.', 422);
+            }
+            if ($trustedStagingRoot !== null) {
+                $resolvedTemporaryPath = realpath($temporaryPath);
+                $stagingPrefix = rtrim($trustedStagingRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+                if ($resolvedTemporaryPath === false
+                    || !str_starts_with(strtolower($resolvedTemporaryPath), strtolower($stagingPrefix))
+                    || !is_file($resolvedTemporaryPath)) {
+                    throw new RuntimeException('A staged resource file could not be safely validated.', 422);
+                }
+                $temporaryPath = $resolvedTemporaryPath;
             }
             $actualBytes = filesize($temporaryPath);
             if (!is_int($actualBytes) || $actualBytes < 1) {
@@ -203,7 +229,10 @@ final class CurriculumIngestionService
             foreach ($validated as $file) {
                 $storedName = bin2hex(random_bytes(20)) . '.' . $file['extension'];
                 $storedPath = $root . DIRECTORY_SEPARATOR . $storedName;
-                if (!move_uploaded_file($file['temporary_path'], $storedPath)) {
+                $stored = $trustedStagingRoot === null
+                    ? move_uploaded_file($file['temporary_path'], $storedPath)
+                    : rename($file['temporary_path'], $storedPath);
+                if (!$stored) {
                     throw new RuntimeException('The server could not store a curriculum upload.');
                 }
                 $storedPaths[] = $storedPath;
@@ -242,6 +271,38 @@ final class CurriculumIngestionService
             }
         }
         return $result;
+    }
+
+    public function uploadStagedFiles(
+        array $files,
+        array $metadata,
+        int $actorUserId,
+        string $stagingDirectory
+    ): array {
+        $stagingRoot = realpath(AKADEMI_STORAGE . DIRECTORY_SEPARATOR . 'curriculum'
+            . DIRECTORY_SEPARATOR . 'upload-staging');
+        $resolvedDirectory = realpath($stagingDirectory);
+        if ($stagingRoot === false || $resolvedDirectory === false
+            || !str_starts_with(
+                strtolower(rtrim($resolvedDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR),
+                strtolower(rtrim($stagingRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR)
+            )) {
+            throw new RuntimeException('The staged upload location is not available.', 422);
+        }
+        if ($files === [] || count($files) > self::MAX_UPLOAD_FILES) {
+            throw new RuntimeException('Upload between 1 and 10 resource files at a time.', 422);
+        }
+        $uploads = ['name' => [], 'tmp_name' => [], 'error' => [], 'size' => []];
+        foreach ($files as $file) {
+            if (!is_array($file) || !is_string($file['path'] ?? null) || !is_string($file['name'] ?? null)) {
+                throw new RuntimeException('The staged upload is malformed. Start the upload again.', 422);
+            }
+            $uploads['name'][] = $file['name'];
+            $uploads['tmp_name'][] = $file['path'];
+            $uploads['error'][] = UPLOAD_ERR_OK;
+            $uploads['size'][] = 0;
+        }
+        return $this->upload($uploads, $metadata, $actorUserId, $resolvedDirectory);
     }
 
     public function processQueuedUpload(int $documentId): array

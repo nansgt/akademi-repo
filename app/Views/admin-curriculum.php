@@ -121,7 +121,7 @@ declare(strict_types=1);
   </dialog>
   <script src="<?= e(app_url('assets/theme.js?v=2')) ?>" defer></script>
   <script src="<?= e(app_url('assets/notifications.js?v=20')) ?>" defer></script>
-  <script src="<?= e(app_url('assets/progress.js?v=5')) ?>" defer></script>
+  <script src="<?= e(app_url('assets/progress.js?v=6')) ?>" defer></script>
   <script src="<?= e(app_url('assets/auth.js?v=22')) ?>" defer></script>
   <script src="<?= e(app_url('assets/admin-shell.js?v=1')) ?>" defer></script>
   <dialog id="curriculum-resource-reader" class="curriculum-reader-dialog" aria-labelledby="curriculum-reader-title">
@@ -132,7 +132,7 @@ declare(strict_types=1);
   </dialog>
   <script src="<?= e(app_url('assets/curriculum-docx-renderer.js?v=1')) ?>" defer></script>
   <script src="<?= e(app_url('assets/curriculum-resource-reader.js?v=10')) ?>" defer></script>
-  <script src="<?= e(app_url('assets/admin-curriculum.js?v=64')) ?>" defer></script>
+  <script src="<?= e(app_url('assets/admin-curriculum.js?v=66')) ?>" defer></script>
   <script src="<?= e(app_url('assets/ai-assistant.js?v=2')) ?>" defer></script>
 </body>
 </html>

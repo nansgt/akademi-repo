@@ -1023,6 +1023,7 @@ final class CurriculumSearchService
 
     private function normalizeSubject(string $subject): string
     {
+        $subject = preg_replace('/\s*\([A-Z][A-Z0-9]{1,7}\)\s*/u', ' ', $subject) ?? $subject;
         return trim(preg_replace('/\s+/u', ' ', preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower(trim($subject), 'UTF-8')) ?? '') ?? '');
     }
 

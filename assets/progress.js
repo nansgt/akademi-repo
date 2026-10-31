@@ -20,6 +20,24 @@
   let animationTimer;
   let hostIsModal = false;
 
+  function isPresentationActive() {
+    return document.body.classList.contains("presentation-follow-page")
+      || Boolean(document.querySelector(".presentation-viewer-dialog[open]"));
+  }
+
+  function isPresentationRequest(url) {
+    return /\/api\/(?:teacher\/)?presentation-simulations(?:\/|[?#]|$)/i.test(url);
+  }
+
+  function muteProgress() {
+    active.clear();
+    clearTimeout(hideTimer);
+    clearInterval(animationTimer);
+    animationTimer = undefined;
+    if (host.open) host.close();
+    hostIsModal = false;
+  }
+
   function openProgress(promote = false) {
     const anotherModalIsOpen = Array.from(document.querySelectorAll("dialog[open]"))
       .some((dialog) => dialog !== host);
@@ -42,6 +60,10 @@
 
   function render(promote = false) {
     clearTimeout(hideTimer);
+    if (isPresentationActive()) {
+      muteProgress();
+      return;
+    }
     if (active.size === 0) {
       clearInterval(animationTimer);
       animationTimer = undefined;
@@ -73,6 +95,10 @@
   }
 
   function start(message) {
+    if (isPresentationActive()) {
+      muteProgress();
+      return 0;
+    }
     const id = ++nextId;
     active.set(id, [message, null, Date.now(), null]);
     render(true);
@@ -130,6 +156,10 @@
     const method = String(options.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(method)) return originalFetch(input, init);
     const url = typeof input === "string" ? input : input.url;
+    if (isPresentationActive() || isPresentationRequest(url)) {
+      muteProgress();
+      return originalFetch(input, init);
+    }
     const id = start(messageFor(url, method));
     return originalFetch(input, init).finally(() => finish(id));
   };
@@ -138,12 +168,18 @@
   XMLHttpRequest.prototype.send = function (body) {
     const method = String(this.__akademiMethod || "GET").toUpperCase();
     if (!["POST", "PUT", "PATCH"].includes(method)) return originalSend.call(this, body);
-    const id = start(messageFor(this.__akademiUrl || "", method));
+    const url = this.__akademiUrl || "";
+    if (isPresentationActive() || isPresentationRequest(url)) {
+      muteProgress();
+      return originalSend.call(this, body);
+    }
+    const id = start(messageFor(url, method));
     if (this.upload && body instanceof FormData) {
       this.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) {
           const progress = (event.loaded / event.total) * 100;
           const current = active.get(id);
+          if (!current) return;
           active.set(id, [
             progress >= 100 ? "Upload received. Processing resources…" : "Uploading resources…",
             progress,

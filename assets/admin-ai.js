@@ -275,7 +275,14 @@
         for (const field of ["host", "port", "username", "encryption", "from_address", "from_name"]) {
           mailForm.elements.namedItem(field).value = mail[field] ?? "";
         }
-        mailPasswordStatus.textContent = mail.password_configured ? "Password stored securely" : "Not configured";
+        mailPasswordStatus.textContent = !mail.password_configured
+          ? "Not configured"
+          : mail.password_usable === false
+            ? "Cannot decrypt — enter a new password"
+            : "Password stored securely";
+        mailForm.elements.namedItem("password").placeholder = mail.password_usable === false
+          ? "Required to replace the unreadable password"
+          : "Blank keeps the current password";
         return mail;
       }),
       loadSection("Social sign-in", async () => {
@@ -353,7 +360,7 @@
     const failures = [aiResult, creditsResult, mailResult, oauthResult, brandResult].filter((item) => item.error);
     const aiReady = aiResult.data?.configured && aiResult.data?.api_key_usable;
     const mail = mailResult.data;
-    const mailReady = mail?.configured && mail.host && mail.from_address
+    const mailReady = mail?.configured && mail.host && mail.from_address && mail.password_usable !== false
       && (!mail.username || mail.password_configured);
     const oauthReady = oauthResult.data?.some((item) => item.enabled && item.secret_configured && item.redirect_uri);
     const statusItems = [
@@ -368,7 +375,11 @@
       {
         label: "SMTP sender and delivery credentials",
         complete: Boolean(mailReady),
-        detail: mailReady ? `Verification mail will use ${mail.from_address} as its configured sender.` : "Set the SMTP host, sender email, and password when SMTP authentication is enabled; save and send a test.",
+        detail: mailReady
+          ? `Verification mail will use ${mail.from_address} as its configured sender.`
+          : mail?.password_usable === false
+            ? "The saved SMTP password cannot be decrypted. Restore the APP_KEY used to save it, or enter a new password here before sending sign-in codes."
+            : "Set the SMTP host, sender email, and password when SMTP authentication is enabled; save and send a test.",
         error: mailResult.error,
       },
       {

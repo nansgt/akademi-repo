@@ -78,7 +78,7 @@ final class PresentationSimulationService
     {
         $pdo = Connection::get();
         $select = $pdo->prepare(
-            'SELECT presentation_data, active_slide, status, reveal_mode, reveal_step
+            'SELECT presentation_data, active_slide, status, reveal_mode, reveal_step, active_poll
              FROM presentation_simulations
              WHERE id = :id AND user_id = :user_id AND expires_at > UTC_TIMESTAMP() LIMIT 1'
         );
@@ -162,17 +162,85 @@ final class PresentationSimulationService
             $assignments[] = 'reveal_interval_seconds = :reveal_interval';
             $parameters['reveal_interval'] = $interval;
         }
+        $poll = null;
         if (array_key_exists('active_poll', $input)) {
             $poll = self::validatePoll($input['active_poll']);
-            $assignments[] = 'active_poll = :active_poll';
-            $parameters['active_poll'] = self::encodeNullable($poll);
+            if ($poll === null) {
+                $assignments[] = 'active_poll = NULL';
+            } else {
+                $assignments[] = 'active_poll = :active_poll';
+                $parameters['active_poll'] = self::encodeNullable($poll);
+            }
+        } elseif ($status === 'ended' && $row['active_poll'] !== null) {
+            $poll = self::validatePoll(json_decode((string)$row['active_poll'], true, 8, JSON_THROW_ON_ERROR));
+            if ($poll !== null) {
+                $poll['open'] = false;
+                $assignments[] = 'active_poll = :active_poll';
+                $parameters['active_poll'] = self::encodeNullable($poll);
+            }
+        }
+        $recordPollHistory = array_key_exists('active_poll', $input) || $status === 'ended';
+        if ($status === 'ended') {
+            $assignments[] = 'ended_at = COALESCE(ended_at, UTC_TIMESTAMP())';
         }
 
         if ($assignments !== []) {
-            $sql = 'UPDATE presentation_simulations SET ' . implode(', ', $assignments)
-                . ' WHERE id = :id AND user_id = :user_id AND status = \'active\' AND expires_at > UTC_TIMESTAMP()';
-            $update = $pdo->prepare($sql);
-            $update->execute($parameters);
+            if ($recordPollHistory) {
+                $pdo->beginTransaction();
+            }
+            try {
+                $sql = 'UPDATE presentation_simulations SET ' . implode(', ', $assignments)
+                    . ' WHERE id = :id AND user_id = :user_id AND status = \'active\' AND expires_at > UTC_TIMESTAMP()';
+                $update = $pdo->prepare($sql);
+                $update->execute($parameters);
+                if ($recordPollHistory) {
+                    $previousPoll = $row['active_poll'] === null
+                        ? null
+                        : json_decode((string)$row['active_poll'], true, 8, JSON_THROW_ON_ERROR);
+                    if (is_array($previousPoll) && (!is_array($poll)
+                        || !hash_equals((string)($previousPoll['id'] ?? ''), (string)($poll['id'] ?? ''))
+                        || empty($poll['open']))) {
+                        $savePreviousPoll = $pdo->prepare(
+                            'INSERT INTO presentation_simulation_polls
+                             (simulation_id, poll_id, question, options, closed_at)
+                             VALUES (:simulation_id, :poll_id, :question, :options, UTC_TIMESTAMP())
+                             ON DUPLICATE KEY UPDATE question = VALUES(question), options = VALUES(options), closed_at = COALESCE(closed_at, UTC_TIMESTAMP())'
+                        );
+                        $savePreviousPoll->execute([
+                            'simulation_id' => $simulationId,
+                            'poll_id' => (string)$previousPoll['id'],
+                            'question' => (string)$previousPoll['question'],
+                            'options' => json_encode($previousPoll['options'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+                        ]);
+                        $close = $pdo->prepare(
+                            'UPDATE presentation_simulation_polls SET closed_at = COALESCE(closed_at, UTC_TIMESTAMP())
+                             WHERE simulation_id = :simulation_id AND poll_id = :poll_id'
+                        );
+                        $close->execute(['simulation_id' => $simulationId, 'poll_id' => (string)$previousPoll['id']]);
+                    }
+                    if (is_array($poll)) {
+                        $savePoll = $pdo->prepare(
+                            'INSERT INTO presentation_simulation_polls
+                             (simulation_id, poll_id, question, options, closed_at)
+                             VALUES (:simulation_id, :poll_id, :question, :options, :closed_at)
+                             ON DUPLICATE KEY UPDATE question = VALUES(question), options = VALUES(options), closed_at = VALUES(closed_at)'
+                        );
+                        $savePoll->execute([
+                            'simulation_id' => $simulationId,
+                            'poll_id' => $poll['id'],
+                            'question' => $poll['question'],
+                            'options' => json_encode($poll['options'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+                            'closed_at' => !empty($poll['open']) ? null : gmdate('Y-m-d H:i:s'),
+                        ]);
+                    }
+                    $pdo->commit();
+                }
+            } catch (\Throwable $exception) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $exception;
+            }
         }
         $state = $this->ownerState($userId, $simulationId);
         if ($state['status'] !== 'active' && $status !== 'ended') {
@@ -198,7 +266,139 @@ final class PresentationSimulationService
         return $this->stateFromRow($row, false);
     }
 
-    public function read(string $token): array
+    public function history(int $userId): array
+    {
+        $statement = Connection::get()->prepare(
+            'SELECT id, title, status, active_slide, presentation_data, created_at, updated_at, ended_at
+             FROM presentation_simulations WHERE user_id = :user_id
+             ORDER BY COALESCE(ended_at, updated_at, created_at) DESC LIMIT 50'
+        );
+        $statement->execute(['user_id' => $userId]);
+        $sessions = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $presentation = json_decode((string)$row['presentation_data'], true, 32, JSON_THROW_ON_ERROR);
+            $simulationId = (int)$row['id'];
+            $counts = Connection::get()->prepare(
+                'SELECT
+                    (SELECT COUNT(*) FROM presentation_simulation_interactions WHERE simulation_id = :poll_session AND interaction_type = \'poll\') AS poll_responses,
+                    (SELECT COUNT(*) FROM presentation_simulation_interactions WHERE simulation_id = :pace_session AND interaction_type = \'reaction\') AS pace_responses,
+                    (SELECT COUNT(*) FROM presentation_simulation_questions WHERE simulation_id = :question_session) AS questions'
+            );
+            $counts->execute([
+                'poll_session' => $simulationId,
+                'pace_session' => $simulationId,
+                'question_session' => $simulationId,
+            ]);
+            $summary = $counts->fetch(PDO::FETCH_ASSOC) ?: [];
+            $sessions[] = [
+                'id' => $simulationId,
+                'title' => (string)$row['title'],
+                'subject' => (string)($presentation['subject'] ?? ''),
+                'status' => (string)$row['status'],
+                'slide_count' => count($presentation['slides'] ?? []),
+                'participant_count' => $this->participantCount($simulationId),
+                'poll_responses' => (int)($summary['poll_responses'] ?? 0),
+                'pace_responses' => (int)($summary['pace_responses'] ?? 0),
+                'question_count' => (int)($summary['questions'] ?? 0),
+                'created_at' => self::isoDate($row['created_at']),
+                'ended_at' => $row['ended_at'] === null ? null : self::isoDate($row['ended_at']),
+            ];
+        }
+        return ['sessions' => $sessions];
+    }
+
+    public function historyDetails(int $userId, int $simulationId): array
+    {
+        $statement = Connection::get()->prepare(
+            'SELECT id, title, presentation_data, status, active_slide, created_at, updated_at, ended_at
+             FROM presentation_simulations WHERE id = :id AND user_id = :user_id LIMIT 1'
+        );
+        $statement->execute(['id' => $simulationId, 'user_id' => $userId]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            throw new RuntimeException('The presentation history was not found.', 404);
+        }
+        $pollStatement = Connection::get()->prepare(
+            'SELECT poll_id, question, options, opened_at, closed_at
+             FROM presentation_simulation_polls WHERE simulation_id = :simulation_id ORDER BY opened_at'
+        );
+        $pollStatement->execute(['simulation_id' => $simulationId]);
+        $polls = [];
+        foreach ($pollStatement->fetchAll(PDO::FETCH_ASSOC) as $poll) {
+            $poll['options'] = json_decode((string)$poll['options'], true, 8, JSON_THROW_ON_ERROR);
+            $poll['opened_at'] = self::isoDate($poll['opened_at']);
+            $poll['closed_at'] = $poll['closed_at'] === null ? null : self::isoDate($poll['closed_at']);
+            $responses = Connection::get()->prepare(
+                'SELECT participant_name, answer_index, updated_at FROM presentation_simulation_interactions
+                 WHERE simulation_id = :simulation_id AND interaction_type = \'poll\' AND interaction_key = :poll_id
+                 ORDER BY updated_at'
+            );
+            $responses->execute(['simulation_id' => $simulationId, 'poll_id' => $poll['poll_id']]);
+            $poll['responses'] = array_map(static fn(array $response): array => [
+                'participant_name' => (string)$response['participant_name'],
+                'answer_index' => (int)$response['answer_index'],
+                'updated_at' => self::isoDate($response['updated_at']),
+            ], $responses->fetchAll(PDO::FETCH_ASSOC));
+            $polls[] = $poll;
+        }
+        $paceStatement = Connection::get()->prepare(
+            'SELECT participant_name, reaction, updated_at FROM presentation_simulation_interactions
+             WHERE simulation_id = :simulation_id AND interaction_type = \'reaction\' ORDER BY updated_at'
+        );
+        $paceStatement->execute(['simulation_id' => $simulationId]);
+        $questions = $this->questionsForSimulation($simulationId);
+        return [
+            'id' => (int)$row['id'],
+            'title' => (string)$row['title'],
+            'presentation' => json_decode((string)$row['presentation_data'], true, 32, JSON_THROW_ON_ERROR),
+            'status' => (string)$row['status'],
+            'active_slide' => (int)$row['active_slide'],
+            'created_at' => self::isoDate($row['created_at']),
+            'ended_at' => $row['ended_at'] === null ? null : self::isoDate($row['ended_at']),
+            'polls' => $polls,
+            'pace_responses' => array_map(static fn(array $response): array => [
+                'participant_name' => (string)$response['participant_name'],
+                'reaction' => (string)$response['reaction'],
+                'updated_at' => self::isoDate($response['updated_at']),
+            ], $paceStatement->fetchAll(PDO::FETCH_ASSOC)),
+            'questions' => $questions,
+        ];
+    }
+
+    public function replyToQuestion(int $userId, int $simulationId, int $questionId, mixed $feedback): array
+    {
+        if (!is_string($feedback)) {
+            throw new RuntimeException('Write a reply of 1 to 1000 characters.', 422);
+        }
+        $feedback = trim($feedback);
+        if ($feedback === '' || mb_strlen($feedback) > 1000) {
+            throw new RuntimeException('Write a reply of 1 to 1000 characters.', 422);
+        }
+        $pdo = Connection::get();
+        $lookup = $pdo->prepare(
+            'SELECT q.id FROM presentation_simulation_questions q
+             INNER JOIN presentation_simulations s ON s.id = q.simulation_id
+             WHERE q.id = :question_id AND q.simulation_id = :simulation_id AND s.user_id = :user_id LIMIT 1'
+        );
+        $lookup->execute(['question_id' => $questionId, 'simulation_id' => $simulationId, 'user_id' => $userId]);
+        if (!$lookup->fetchColumn()) {
+            throw new RuntimeException('The student question was not found.', 404);
+        }
+        $update = $pdo->prepare(
+            'UPDATE presentation_simulation_questions
+             SET teacher_feedback = :feedback, answered_at = UTC_TIMESTAMP()
+             WHERE id = :question_id AND simulation_id = :simulation_id'
+        );
+        $update->execute(['feedback' => $feedback, 'question_id' => $questionId, 'simulation_id' => $simulationId]);
+        $question = $pdo->prepare(
+            'SELECT id, participant_name, question, teacher_feedback, created_at, answered_at
+             FROM presentation_simulation_questions WHERE id = :id LIMIT 1'
+        );
+        $question->execute(['id' => $questionId]);
+        return ['question' => $this->formatQuestion($question->fetch(PDO::FETCH_ASSOC))];
+    }
+
+    public function read(string $token, ?string $participantId = null): array
     {
         $statement = Connection::get()->prepare(
             'SELECT id, title, presentation_data, active_slide, status, reveal_mode, reveal_step,
@@ -211,7 +411,10 @@ final class PresentationSimulationService
         if (!$row) {
             throw new RuntimeException('This presentation link is invalid or no longer available.', 404);
         }
-        return $this->stateFromRow($row, true);
+        $participantHash = $participantId !== null && preg_match('/^[a-f0-9-]{36}$/iD', $participantId)
+            ? hash('sha256', strtolower($participantId))
+            : null;
+        return $this->stateFromRow($row, true, $participantHash);
     }
 
     public function interact(string $token, array $input): array
@@ -220,67 +423,107 @@ final class PresentationSimulationService
         if (!preg_match('/^[a-f0-9-]{36}$/D', $participantId)) {
             throw new RuntimeException('Refresh the student presentation and try again.', 422);
         }
-        $lookup = Connection::get()->prepare(
-            'SELECT id, status, active_poll, expires_at FROM presentation_simulations
-             WHERE share_token_hash = :token_hash LIMIT 1'
-        );
-        $lookup->execute(['token_hash' => hash('sha256', $token, true)]);
-        $simulation = $lookup->fetch(PDO::FETCH_ASSOC);
-        if (!$simulation || $simulation['status'] !== 'active'
-            || strtotime((string)$simulation['expires_at'] . ' UTC') <= time()) {
-            throw new RuntimeException('This live presentation is no longer available.', 404);
-        }
-
-        $simulationId = (int)$simulation['id'];
-        $participantHash = hash('sha256', $participantId);
-        $type = (string)($input['type'] ?? '');
+        $participantName = self::validateParticipantName($input['participant_name'] ?? null);
         $pdo = Connection::get();
-        if ($type === 'poll') {
-            $poll = $simulation['active_poll'] === null
-                ? null
-                : json_decode((string)$simulation['active_poll'], true, 8, JSON_THROW_ON_ERROR);
-            $pollId = (string)($input['poll_id'] ?? '');
-            $answer = filter_var($input['answer_index'] ?? null, FILTER_VALIDATE_INT);
-            if (!is_array($poll) || empty($poll['open']) || !hash_equals((string)($poll['id'] ?? ''), $pollId)
-                || $answer === false || $answer < 0 || $answer >= count($poll['options'] ?? [])) {
-                throw new RuntimeException('That poll is closed or the selected answer is invalid.', 409);
-            }
-            $save = $pdo->prepare(
-                'INSERT INTO presentation_simulation_interactions
-                 (simulation_id, participant_hash, interaction_type, interaction_key, answer_index)
-                 VALUES (:simulation_id, :participant_hash, \'poll\', :interaction_key, :answer_index)
-                 ON DUPLICATE KEY UPDATE answer_index = VALUES(answer_index), updated_at = UTC_TIMESTAMP()'
+        $pdo->beginTransaction();
+        try {
+            $lookup = $pdo->prepare(
+                'SELECT id, status, active_poll, expires_at FROM presentation_simulations
+                 WHERE share_token_hash = :token_hash LIMIT 1 FOR UPDATE'
             );
-            $save->execute([
-                'simulation_id' => $simulationId,
-                'participant_hash' => $participantHash,
-                'interaction_key' => $pollId,
-                'answer_index' => $answer,
-            ]);
-        } elseif ($type === 'reaction') {
-            $reaction = (string)($input['reaction'] ?? '');
-            if (!in_array($reaction, self::REACTIONS, true)) {
-                throw new RuntimeException('Choose a valid classroom reaction.', 422);
+            $lookup->execute(['token_hash' => hash('sha256', $token, true)]);
+            $simulation = $lookup->fetch(PDO::FETCH_ASSOC);
+            if (!$simulation || $simulation['status'] !== 'active'
+                || strtotime((string)$simulation['expires_at'] . ' UTC') <= time()) {
+                throw new RuntimeException('This live presentation is no longer available.', 404);
             }
-            $save = $pdo->prepare(
-                'INSERT INTO presentation_simulation_interactions
-                 (simulation_id, participant_hash, interaction_type, interaction_key, reaction)
-                 VALUES (:simulation_id, :participant_hash, \'reaction\', \'reaction\', :reaction)
-                 ON DUPLICATE KEY UPDATE reaction = VALUES(reaction), updated_at = UTC_TIMESTAMP()'
-            );
-            $save->execute([
-                'simulation_id' => $simulationId,
-                'participant_hash' => $participantHash,
-                'reaction' => $reaction,
-            ]);
-        } else {
-            throw new RuntimeException('Choose a supported presentation interaction.', 422);
-        }
 
-        return $this->read($token);
+            $simulationId = (int)$simulation['id'];
+            $participantHash = hash('sha256', $participantId);
+            $type = (string)($input['type'] ?? '');
+            if ($type === 'poll') {
+                $poll = $simulation['active_poll'] === null
+                    ? null
+                    : json_decode((string)$simulation['active_poll'], true, 8, JSON_THROW_ON_ERROR);
+                $pollId = (string)($input['poll_id'] ?? '');
+                $answer = filter_var($input['answer_index'] ?? null, FILTER_VALIDATE_INT);
+                if (!is_array($poll) || empty($poll['open']) || !hash_equals((string)($poll['id'] ?? ''), $pollId)
+                    || $answer === false || $answer < 0 || $answer >= count($poll['options'] ?? [])) {
+                    throw new RuntimeException('That poll is closed or the selected answer is invalid.', 409);
+                }
+                $save = $pdo->prepare(
+                    'INSERT INTO presentation_simulation_interactions
+                     (simulation_id, participant_hash, participant_name, interaction_type, interaction_key, answer_index)
+                      VALUES (:simulation_id, :participant_hash, :participant_name, \'poll\', :interaction_key, :answer_index)
+                      ON DUPLICATE KEY UPDATE participant_name = VALUES(participant_name), answer_index = VALUES(answer_index), updated_at = UTC_TIMESTAMP()'
+                );
+                $save->execute([
+                    'simulation_id' => $simulationId,
+                    'participant_hash' => $participantHash,
+                    'participant_name' => $participantName,
+                    'interaction_key' => $pollId,
+                    'answer_index' => $answer,
+                ]);
+            } elseif ($type === 'reaction') {
+                $reaction = (string)($input['reaction'] ?? '');
+                if (!in_array($reaction, self::REACTIONS, true)) {
+                    throw new RuntimeException('Choose a valid classroom reaction.', 422);
+                }
+                $save = $pdo->prepare(
+                    'INSERT INTO presentation_simulation_interactions
+                     (simulation_id, participant_hash, participant_name, interaction_type, interaction_key, reaction)
+                      VALUES (:simulation_id, :participant_hash, :participant_name, \'reaction\', \'reaction\', :reaction)
+                      ON DUPLICATE KEY UPDATE participant_name = VALUES(participant_name), reaction = VALUES(reaction), updated_at = UTC_TIMESTAMP()'
+                );
+                $save->execute([
+                    'simulation_id' => $simulationId,
+                    'participant_hash' => $participantHash,
+                    'participant_name' => $participantName,
+                    'reaction' => $reaction,
+                ]);
+            } elseif ($type === 'question') {
+                $questionInput = $input['question'] ?? null;
+                if (!is_string($questionInput)) {
+                    throw new RuntimeException('Write a question of 1 to 1000 characters.', 422);
+                }
+                $question = trim($questionInput);
+                if ($question === '' || mb_strlen($question) > 1000) {
+                    throw new RuntimeException('Write a question of 1 to 1000 characters.', 422);
+                }
+                $rateLimit = $pdo->prepare(
+                    'SELECT COUNT(*) FROM presentation_simulation_questions
+                     WHERE simulation_id = :simulation_id AND participant_hash = :participant_hash
+                     AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MINUTE)'
+                );
+                $rateLimit->execute(['simulation_id' => $simulationId, 'participant_hash' => $participantHash]);
+                if ((int)$rateLimit->fetchColumn() >= 3) {
+                    throw new RuntimeException('Please wait a moment before asking another question.', 429);
+                }
+                $save = $pdo->prepare(
+                    'INSERT INTO presentation_simulation_questions
+                     (simulation_id, participant_hash, participant_name, question)
+                     VALUES (:simulation_id, :participant_hash, :participant_name, :question)'
+                );
+                $save->execute([
+                    'simulation_id' => $simulationId,
+                    'participant_hash' => $participantHash,
+                    'participant_name' => $participantName,
+                    'question' => $question,
+                ]);
+            } else {
+                throw new RuntimeException('Choose a supported presentation interaction.', 422);
+            }
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+        return $this->read($token, $participantId);
     }
 
-    private function stateFromRow(array $row, bool $forStudent): array
+    private function stateFromRow(array $row, bool $forStudent, ?string $participantHash = null): array
     {
         $presentation = json_decode((string)$row['presentation_data'], true, 32, JSON_THROW_ON_ERROR);
         $slides = $presentation['slides'] ?? [];
@@ -289,6 +532,9 @@ final class PresentationSimulationService
         $poll = $row['active_poll'] === null ? null : json_decode((string)$row['active_poll'], true, 8, JSON_THROW_ON_ERROR);
         if (is_array($poll)) {
             $poll['results'] = $this->pollResults((int)$row['id'], (string)($poll['id'] ?? ''));
+            if (!$forStudent) {
+                $poll['responses'] = $this->pollRespondents((int)$row['id'], (string)($poll['id'] ?? ''));
+            }
         }
         $pointer = $row['pointer_data'] === null ? null : json_decode((string)$row['pointer_data'], true, 8, JSON_THROW_ON_ERROR);
         if (is_array($pointer) && isset($pointer['updated_at']) && (time() - (int)$pointer['updated_at'] > 4)) {
@@ -324,8 +570,132 @@ final class PresentationSimulationService
             'timer_duration_seconds' => $row['timer_duration_seconds'] === null ? null : (int)$row['timer_duration_seconds'],
             'active_poll' => $poll,
             'reaction_counts' => $reactionCounts,
+            'reaction_responses' => $forStudent ? [] : $this->reactionRespondents((int)$row['id']),
+            'own_poll_answers' => $forStudent ? $this->ownPollAnswers((int)$row['id'], $participantHash) : [],
+            'questions' => $forStudent
+                ? $this->questionsForParticipant((int)$row['id'], $participantHash)
+                : $this->questionsForSimulation((int)$row['id'], true),
             'expires_at' => gmdate('c', strtotime((string)$row['expires_at'] . ' UTC')),
         ];
+    }
+
+    private function pollRespondents(int $simulationId, string $pollId): array
+    {
+        if ($pollId === '') {
+            return [];
+        }
+        $statement = Connection::get()->prepare(
+            'SELECT participant_name, answer_index FROM presentation_simulation_interactions
+             WHERE simulation_id = :simulation_id AND interaction_type = \'poll\' AND interaction_key = :poll_id
+             ORDER BY updated_at'
+        );
+        $statement->execute(['simulation_id' => $simulationId, 'poll_id' => $pollId]);
+        return array_map(static fn(array $row): array => [
+            'participant_name' => (string)$row['participant_name'],
+            'answer_index' => (int)$row['answer_index'],
+        ], $statement->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    private function reactionRespondents(int $simulationId): array
+    {
+        $statement = Connection::get()->prepare(
+            'SELECT participant_name, reaction FROM presentation_simulation_interactions
+             WHERE simulation_id = :simulation_id AND interaction_type = \'reaction\' ORDER BY updated_at'
+        );
+        $statement->execute(['simulation_id' => $simulationId]);
+        return array_map(static fn(array $row): array => [
+            'participant_name' => (string)$row['participant_name'],
+            'reaction' => (string)$row['reaction'],
+        ], $statement->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    private function ownPollAnswers(int $simulationId, ?string $participantHash): array
+    {
+        if ($participantHash === null) {
+            return [];
+        }
+        $statement = Connection::get()->prepare(
+            'SELECT interaction_key, answer_index FROM presentation_simulation_interactions
+             WHERE simulation_id = :simulation_id AND participant_hash = :participant_hash
+             AND interaction_type = \'poll\''
+        );
+        $statement->execute(['simulation_id' => $simulationId, 'participant_hash' => $participantHash]);
+        $answers = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if ($row['answer_index'] !== null) {
+                $answers[(string)$row['interaction_key']] = (int)$row['answer_index'];
+            }
+        }
+        return $answers;
+    }
+
+    private function questionsForSimulation(int $simulationId, bool $recentOnly = false): array
+    {
+        $limit = $recentOnly ? ' LIMIT 100' : '';
+        $statement = Connection::get()->prepare(
+            'SELECT id, participant_name, question, teacher_feedback, created_at, answered_at
+             FROM presentation_simulation_questions WHERE simulation_id = :simulation_id ORDER BY created_at DESC' . $limit
+        );
+        $statement->execute(['simulation_id' => $simulationId]);
+        $questions = array_map(fn(array $row): array => $this->formatQuestion($row), $statement->fetchAll(PDO::FETCH_ASSOC));
+        return array_reverse($questions);
+    }
+
+    private function questionsForParticipant(int $simulationId, ?string $participantHash): array
+    {
+        if ($participantHash === null) {
+            return [];
+        }
+        $statement = Connection::get()->prepare(
+            'SELECT id, participant_name, question, teacher_feedback, created_at, answered_at
+             FROM presentation_simulation_questions
+             WHERE simulation_id = :simulation_id AND participant_hash = :participant_hash
+             ORDER BY created_at'
+        );
+        $statement->execute(['simulation_id' => $simulationId, 'participant_hash' => $participantHash]);
+        return array_map(fn(array $row): array => $this->formatQuestion($row), $statement->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    private function formatQuestion(array $row): array
+    {
+        return [
+            'id' => (int)$row['id'],
+            'participant_name' => (string)$row['participant_name'],
+            'question' => (string)$row['question'],
+            'teacher_feedback' => $row['teacher_feedback'] === null ? null : (string)$row['teacher_feedback'],
+            'created_at' => self::isoDate($row['created_at']),
+            'answered_at' => $row['answered_at'] === null ? null : self::isoDate($row['answered_at']),
+        ];
+    }
+
+    private function participantCount(int $simulationId): int
+    {
+        $statement = Connection::get()->prepare(
+            'SELECT COUNT(DISTINCT participant_hash) FROM (
+                SELECT participant_hash FROM presentation_simulation_interactions WHERE simulation_id = :interaction_session
+                UNION
+                SELECT participant_hash FROM presentation_simulation_questions WHERE simulation_id = :question_session
+             ) AS participants'
+        );
+        $statement->execute(['interaction_session' => $simulationId, 'question_session' => $simulationId]);
+        return (int)$statement->fetchColumn();
+    }
+
+    private static function validateParticipantName(mixed $value): string
+    {
+        if (!is_string($value)) {
+            throw new RuntimeException('Enter your name using 1 to 80 characters.', 422);
+        }
+        $name = trim($value);
+        if ($name === '' || mb_strlen($name) > 80 || preg_match('/[\x00-\x1F\x7F]/u', $name)) {
+            throw new RuntimeException('Enter your name using 1 to 80 characters.', 422);
+        }
+        return $name;
+    }
+
+    private static function isoDate(mixed $value): string
+    {
+        return gmdate('c', strtotime((string)$value . ' UTC'));
     }
 
     private function pollResults(int $simulationId, string $pollId): array

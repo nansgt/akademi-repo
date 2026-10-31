@@ -61,6 +61,29 @@
     return `<svg class="icon ${className}" aria-hidden="true"><use href="${base}/assets/icons.svg#fa-${name}"></use></svg>`;
   }
 
+  function distributePresentationNotes(notes, slideCount) {
+    if (slideCount < 1) return [];
+    const grouped = Array.from({ length: slideCount }, () => []);
+    notes.forEach((note, index) => {
+      const slideIndex = Math.min(slideCount - 1, Math.floor(index * slideCount / Math.max(1, notes.length)));
+      grouped[slideIndex].push(note);
+    });
+    return grouped.map((items) => items.join("\n"));
+  }
+
+  function templateLectureCue(template, title, activity) {
+    const cues = {
+      lesson: "Introduce the focus, explain the key idea with a relevant example, then check understanding.",
+      inquiry: "Invite learners to predict, examine evidence, and explain what their observations support.",
+      worked: "Model the reasoning step by step, think aloud, and pause for learners to try the next step.",
+      discussion: "Invite more than one perspective, ask learners to support ideas with evidence, and connect contributions.",
+      project: "Revisit the success criteria, check progress, and prompt learners to explain their choices.",
+      revision: "Use retrieval before reteaching, address one misconception, and give immediate practice feedback.",
+      flipped: "Check prior preparation, clarify questions, and use class time for supported application."
+    };
+    return `Lecture notes · ${title}\n${cues[template] || cues.lesson}${activity ? ` ${activity}` : ""}`;
+  }
+
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -360,7 +383,8 @@
 
   const appBase = document.querySelector('meta[name="app-base-path"]')?.content || "";
   document.getElementById("sync-state").textContent = "Syncing your account…";
-  async function workspaceRequest(path, method = "GET", payload = null) {
+  async function workspaceRequest(path, method = "GET", payload = null, { silent = false } = {}) {
+    const showSyncProgress = !silent && !path.startsWith("/api/teacher/presentation-simulations");
     const options = {
       method,
       credentials: "same-origin",
@@ -376,11 +400,11 @@
     const response = await fetch(`${appBase}${path}`, options);
     const result = await response.json();
     if (!response.ok) {
-      document.getElementById("sync-state").textContent = "Sync failed";
+      if (showSyncProgress) document.getElementById("sync-state").textContent = "Sync failed";
       const reference = result.request_id ? ` (Reference: ${result.request_id})` : "";
       throw new Error(`${result.error || "The server could not complete this action."}${reference}`);
     }
-    markSynced();
+    if (showSyncProgress) markSynced();
     return result;
   }
   function updateCreditDisplay() {
@@ -1937,11 +1961,14 @@
         presentation_indicators: manualLines("indicators").join("\n"),
         teaching_points: manualLines("points").join("\n"),
         presentation_visual_data: values.visualData || "",
+        presentation_lecture_notes: values.lectureNotes || "",
         number_of_slides: Number(values.slides),
         teacher_instructions: [
           `Use a ${templateNames[values.template] || templateNames.lesson} structure.`,
           selectedWeeks.length && "Cover every selected weekly section across the presentation; use the selected_week_sections data as the source of the week-by-week scope.",
-          "Keep the outline editable, age-appropriate, classroom-ready, and grounded in the supplied topics and teacher-editable outcomes, indicators and teaching points. Do not invent official curriculum wording."
+          values.lectureNotes && "Place the teacher's supplied lecture notes in the private presenter_notes field across the slides. Do not copy presenter notes into student-facing slide content.",
+          "Keep the outline editable, age-appropriate, classroom-ready, and grounded in the supplied topics and teacher-editable outcomes, indicators and teaching points. Do not invent official curriculum wording.",
+          "Include concise lecture notes in each slide's private presenter_notes field. Incorporate supplied teacher notes, and never place presenter notes in student-facing slide content."
         ].filter(Boolean).join("\n")
       });
     }
@@ -1982,6 +2009,18 @@
         credits = result.credits || credits;
         updateCreditDisplay();
         markSynced();
+        if (type === "slides") {
+          button.textContent = "Finding relevant images…";
+          const imageResult = await enrichPresentationImages(result.draft.slides || [], requestInput.subject || "");
+          const imageNotices = [];
+          if (imageResult.failed) {
+            imageNotices.push(`${imageResult.failed} image search${imageResult.failed === 1 ? "" : "es"} could not reach Wikimedia Commons.`);
+          }
+          if (imageResult.unavailable) {
+            imageNotices.push(`${imageResult.unavailable} slide${imageResult.unavailable === 1 ? "" : "s"} had no suitable openly licensed image match.`);
+          }
+          result.draft.presentation_image_warning = imageNotices.join(" ");
+        }
         await renderAiDraft(type, requestInput, result.draft, {
           append: type === "assessment" && index > 0,
           combinationIndex,
@@ -2328,6 +2367,14 @@
       draft.year_group = input.year_group || "";
       applyPresentationVisualData(draft.slides || [], input.presentation_visual_data || "");
       draft.slides = ensurePresentationVisuals(draft.slides || []);
+      const lectureNotes = lines(input.presentation_lecture_notes);
+      if (lectureNotes.length) {
+        draft.lecture_notes = lectureNotes;
+        const slideNotes = distributePresentationNotes(lectureNotes, draft.slides.length);
+        draft.slides.forEach((slide, index) => {
+          slide.presenter_notes = [slide.presenter_notes, slideNotes[index]].filter(Boolean).join("\n");
+        });
+      }
     }
     const schemeSemesterRows = type === "scheme"
       ? (draft.weeks || []).reduce((counts, week) => {
@@ -2733,7 +2780,7 @@
       discussion: "Discussion & collaboration", project: "Project-based learning",
       revision: "Revision & retrieval practice", flipped: "Flipped classroom"
     };
-    return `<div class="document-section"><h3>${escapeHtml(templateLabels[presentation.template])} · PowerPoint slide preview</h3><p>Slides use the ${escapeHtml(presentation.visual_theme)} design. Visual diagrams, charts, tables and graphs appear in each slide preview and export as editable PowerPoint elements.</p><div class="presentation-preview-grid">${slides}</div></div>`;
+    return `<div class="document-section"><h3>${escapeHtml(templateLabels[presentation.template])} · PowerPoint slide preview</h3><p>Slides use the ${escapeHtml(presentation.visual_theme)} design. Relevant openly licensed images are added to selected slides where a suitable match is available, with creator and license credits; diagrams, charts, tables and graphs are editable PowerPoint elements.</p>${draft.presentation_image_warning ? `<p class="notice notice-amber">${escapeHtml(draft.presentation_image_warning)}</p>` : ""}<div class="presentation-preview-grid">${slides}</div></div>`;
   }
 
   function ensurePresentationVisuals(slides) {
@@ -2773,7 +2820,7 @@
     if (type === "table") {
       const headers = Array.isArray(visual.headers) ? visual.headers.slice(0, 4) : [];
       const rows = Array.isArray(visual.rows) ? visual.rows.filter(Array.isArray).slice(0, 3) : [];
-      return `<div class="presentation-visual presentation-visual-table" role="img" aria-label="${title}"><strong>${title}</strong><table><thead><tr>${headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.slice(0, headers.length || 4).map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      return `<div class="presentation-visual presentation-visual-table" role="img" aria-label="${title}"><strong>${title}</strong><div class="presentation-visual-table-scroll"><table><thead><tr>${headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.slice(0, headers.length || 4).map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
     }
     if (type === "bar_chart" || type === "chart") {
       const labels = Array.isArray(visual.labels) ? visual.labels.slice(0, 6) : [];
@@ -5954,6 +6001,8 @@
     };
     const sequence = templateSequences[values.template] || templateSequences.lesson;
     const points = lines(values.points);
+    const lectureNotes = lines(values.lectureNotes);
+    const lectureNotesBySlide = distributePresentationNotes(lectureNotes, count);
     const outcomes = lines(values.outcomes);
     const indicators = lines(values.indicators);
     const selectedWeeks = selectedSlideWeeks();
@@ -6027,6 +6076,10 @@
         title,
         key_points: keyPoints,
         activity: activities[values.template] || activities.lesson,
+        presenter_notes: [
+          templateLectureCue(values.template, title, activities[values.template] || activities.lesson),
+          lectureNotesBySlide[index]
+        ].filter(Boolean).join("\n\n"),
         visual_suggestion: topicVisual ? "" : "Add a relevant labelled diagram, worked example, or classroom visual.",
         visual: topicVisual
       };
@@ -6046,6 +6099,7 @@
       learning_outcomes: outcomes,
       learning_indicators: indicators,
       teaching_points: points,
+      lecture_notes: lectureNotes,
       slides: ensurePresentationVisuals(slides)
     };
   }
@@ -6063,7 +6117,123 @@
   }
 
   function presentationSlideMarkup(slide, index, data) {
-    return `<article class="presentation-slide-preview presentation-theme-${escapeHtml(data.visual_theme)} presentation-template-${escapeHtml(data.template)}"><header><span>SLIDE ${String(index + 1).padStart(2, "0")}</span><small>${escapeHtml(data.subject || "")} · ${escapeHtml(data.year || data.year_group || "")}</small></header><h4>${escapeHtml(slide.title)}</h4><ul>${(slide.key_points || []).map((point) => `<li>${escapeHtml(point)}</li>`).join("")}</ul>${presentationVisualMarkup(slide.visual)}<p>${escapeHtml(slide.activity || "")}${slide.visual_suggestion ? `<br><b>Visual:</b> ${escapeHtml(slide.visual_suggestion)}` : ""}</p></article>`;
+    const imageMarkup = presentationImageMarkup(slide.image);
+    const visualMarkup = presentationVisualMarkup(slide.visual);
+    const mediaMarkup = imageMarkup
+      ? `<div class="presentation-media-column">${imageMarkup}${visualMarkup}</div>`
+      : visualMarkup;
+    return `<article class="presentation-slide-preview presentation-theme-${escapeHtml(data.visual_theme)} presentation-template-${escapeHtml(data.template)}"><header><span>SLIDE ${String(index + 1).padStart(2, "0")}</span><small>${escapeHtml(data.subject || "")} · ${escapeHtml(data.year || data.year_group || "")}</small></header><h4>${escapeHtml(slide.title)}</h4><ul>${(slide.key_points || []).map((point) => `<li>${escapeHtml(point)}</li>`).join("")}</ul>${mediaMarkup}<p>${escapeHtml(slide.activity || "")}${slide.visual_suggestion ? `<br><b>Visual:</b> ${escapeHtml(slide.visual_suggestion)}` : ""}</p></article>`;
+  }
+
+  function presentationImageMarkup(image) {
+    if (!image || typeof image !== "object") return "";
+    let imageUrl;
+    let sourceUrl;
+    try {
+      imageUrl = new URL(String(image.url || ""));
+      sourceUrl = new URL(String(image.source_url || ""));
+    } catch {
+      return "";
+    }
+    if (imageUrl.protocol !== "https:" || !["upload.wikimedia.org", "thumb.wikimedia.org"].includes(imageUrl.hostname)
+      || sourceUrl.protocol !== "https:" || sourceUrl.hostname !== "commons.wikimedia.org") return "";
+    let licenseMarkup = "";
+    try {
+      const licenseUrl = new URL(String(image.license_url || ""));
+      if (licenseUrl.protocol === "https:" && ["creativecommons.org", "www.gnu.org"].includes(licenseUrl.hostname)) {
+        licenseMarkup = ` · <a href="${escapeHtml(licenseUrl.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(image.license || "License")}</a>`;
+      }
+    } catch { /* Some public-domain images do not have a separate license URL. */ }
+    return `<figure class="presentation-slide-image"><img src="${escapeHtml(imageUrl.href)}" alt="${escapeHtml(image.alt || "Curriculum-related classroom image")}" loading="lazy" referrerpolicy="no-referrer"><figcaption><a href="${escapeHtml(sourceUrl.href)}" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>${image.attribution ? ` · ${escapeHtml(image.attribution)}` : ""}${licenseMarkup}</figcaption></figure>`;
+  }
+
+  async function enrichPresentationImages(slides, subject) {
+    const allCandidates = slides.filter((slide) => !slide.image);
+    const imageLimit = Math.min(8, allCandidates.length);
+    const candidates = imageLimit === allCandidates.length
+      ? allCandidates
+      : Array.from({ length: imageLimit }, (_, index) =>
+        allCandidates[Math.round(index * (allCandidates.length - 1) / Math.max(1, imageLimit - 1))]
+      );
+    let nextIndex = 0;
+    let failed = 0;
+    let unavailable = 0;
+    const plainText = (value) => new DOMParser().parseFromString(String(value || ""), "text/html").body.textContent.trim();
+    const searchImage = async (slide) => {
+      const concepts = [slide.title, ...(Array.isArray(slide.key_points) ? slide.key_points.slice(0, 2) : [])]
+        .map((value) => String(value || "").replace(/[^\p{L}\p{N}\s-]/gu, " ").trim())
+        .filter(Boolean);
+      const query = `${concepts.join(" ")} ${String(subject || "").trim()}`.replace(/\s+/g, " ").slice(0, 180);
+      if (!concepts.length) return null;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 7000);
+      try {
+        const params = new URLSearchParams({
+          action: "query",
+          generator: "search",
+          gsrsearch: `filetype:bitmap ${query}`,
+          gsrnamespace: "6",
+          gsrlimit: "5",
+          prop: "imageinfo|info",
+          inprop: "url",
+          iiprop: "url|extmetadata",
+          iiurlwidth: "1200",
+          format: "json",
+          origin: "*"
+        });
+        const response = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
+          headers: { Accept: "application/json" },
+          cache: "force-cache",
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error(`Wikimedia image search returned HTTP ${response.status}.`);
+        const result = await response.json();
+        const pages = Object.values(result.query?.pages || {});
+        const page = pages.find((candidate) => {
+          const info = candidate.imageinfo?.[0];
+          let imageUrl;
+          let sourceUrl;
+          try { imageUrl = new URL(String(info?.thumburl || "")); } catch { return false; }
+          try { sourceUrl = new URL(String(candidate.fullurl || "")); } catch { return false; }
+          const metadata = info?.extmetadata || {};
+          const license = plainText(metadata.LicenseShortName?.value || "");
+          return imageUrl.protocol === "https:"
+            && ["upload.wikimedia.org", "thumb.wikimedia.org"].includes(imageUrl.hostname)
+            && sourceUrl.protocol === "https:" && sourceUrl.hostname === "commons.wikimedia.org"
+            && /(?:\bcc\b|creative commons|public domain|gfdl|free art)/i.test(license);
+        });
+        if (!page) {
+          unavailable++;
+          return null;
+        }
+        const info = page.imageinfo[0];
+        const metadata = info.extmetadata || {};
+        const artist = plainText(metadata.Artist?.value || metadata.Credit?.value || "");
+        return {
+          url: info.thumburl,
+          source_url: page.fullurl,
+          alt: plainText(metadata.ObjectName?.value || page.title.replace(/^File:/, "")),
+          attribution: artist.slice(0, 240),
+          license: plainText(metadata.LicenseShortName?.value || "").slice(0, 80),
+          license_url: plainText(metadata.LicenseUrl?.value || "")
+        };
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    };
+    const workers = Array.from({ length: Math.min(3, candidates.length) }, async () => {
+      while (nextIndex < candidates.length) {
+        const slide = candidates[nextIndex++];
+        try {
+          slide.image = await searchImage(slide);
+        } catch (error) {
+          failed++;
+          console.warn("A curriculum slide image could not be loaded:", error);
+        }
+      }
+    });
+    await Promise.all(workers);
+    return { failed, unavailable };
   }
 
   function openPresentationViewer(data, title) {
@@ -6077,14 +6247,105 @@
     const dialog = document.createElement("dialog");
     dialog.className = "presentation-viewer-dialog";
     dialog.setAttribute("aria-label", `${title || presentation.title || "Presentation"} slideshow`);
-    dialog.innerHTML = `<header class="presentation-viewer-header"><div><span class="eyebrow">PRESENTATION MODE</span><strong>${escapeHtml(title || presentation.title || "Presentation")}</strong></div><div class="presentation-viewer-header-actions"><button type="button" class="small-button" data-presentation-presenter-view aria-pressed="false">Presenter view</button><button type="button" class="small-button" data-presentation-fullscreen>Full screen</button><button type="button" class="small-button" data-presentation-live>Start student follow</button><button type="button" class="small-button" data-presentation-close>Exit presentation</button></div></header><div class="presentation-live-sharing" data-presentation-live-sharing hidden></div><section class="presentation-teacher-toolbar" aria-label="Presentation tools"><label>Reveal <select data-presentation-reveal><option value="all">All content</option><option value="group">Groups of two</option><option value="item">One item at a time</option><option value="timed">Timed reveal</option></select></label><label data-reveal-interval-wrap hidden>Every <input data-reveal-interval type="number" min="2" max="60" value="5"> sec</label><div class="presentation-tool-group" role="group" aria-label="Pointer and drawing tools"><button type="button" class="small-button is-selected" data-presentation-tool="pointer">Laser pointer</button><button type="button" class="small-button" data-presentation-tool="pen">Pen</button><button type="button" class="small-button" data-presentation-tool="highlighter">Highlighter</button><button type="button" class="small-button" data-presentation-tool="eraser">Eraser</button><label>Ink <select data-presentation-color aria-label="Ink color"><option value="#e5484d">Red</option><option value="#2f80ed">Blue</option><option value="#27ae60">Green</option><option value="#f2c94c">Yellow</option><option value="#ffffff">White</option></select></label><button type="button" class="small-button" data-presentation-undo>Undo</button><button type="button" class="small-button" data-presentation-clear>Clear marks</button></div><div class="presentation-tool-group" role="group" aria-label="Class timer"><label>Timer minutes <input data-presentation-timer-minutes type="number" min="1" max="120" value="5"></label><button type="button" class="small-button" data-presentation-timer-start>Start timer</button><button type="button" class="small-button" data-presentation-timer-stop>Stop timer</button><strong data-presentation-timer-label aria-live="off"></strong></div><form class="presentation-tool-group presentation-poll-form" data-presentation-poll-form><label>Quick check <input data-presentation-poll-question maxlength="240" placeholder="Ask your class a question"></label><label>Choices <textarea data-presentation-poll-options rows="2" placeholder="One choice per line (2–6)"></textarea></label><button type="submit" class="small-button" data-presentation-poll-start>Start poll</button><button type="button" class="small-button" data-presentation-poll-close>Close poll</button><span data-presentation-poll-results aria-live="polite"></span></form></section><div class="presentation-viewer-progress" role="progressbar" aria-label="Slide progress" aria-valuemin="1" aria-valuemax="${slides.length}" aria-valuenow="1"><span data-presentation-progress></span></div><div class="presentation-viewer-layout"><div class="presentation-viewer-stage" data-presentation-stage></div><aside class="presentation-presenter-notes" data-presentation-notes hidden><label>Private presenter notes<textarea data-presentation-notes-input rows="12" placeholder="Only you can see these notes."></textarea></label><p>Notes are private to this presenter and are never sent to student devices.</p></aside></div><footer class="presentation-viewer-controls"><button type="button" class="small-button" data-presentation-previous>Previous</button><span data-presentation-slide-count aria-live="polite"></span><button type="button" class="small-button" data-presentation-next>Next / reveal</button></footer>`;
+    dialog.innerHTML = `
+      <div class="presentation-fullscreen-content">
+      <header class="presentation-viewer-header">
+        <strong class="presentation-viewer-title">${escapeHtml(title || presentation.title || "Presentation")}</strong>
+        <nav class="presentation-toolbar" aria-label="Presentation controls">
+          <div class="presentation-toolbar-category" aria-label="Slides">
+            <button type="button" class="presentation-icon-button" data-presentation-previous aria-label="Previous slide or reveal" title="Previous"><i class="fa-solid fa-arrow-left"></i><small>Back</small></button>
+            <button type="button" class="presentation-icon-button" data-presentation-next aria-label="Next reveal or slide" title="Next / reveal"><i class="fa-solid fa-arrow-right"></i><small>Next</small></button>
+            <details class="presentation-toolbar-menu">
+              <summary class="presentation-icon-button" aria-label="Reveal settings" title="Reveal settings"><i class="fa-solid fa-eye"></i><small>Reveal</small></summary>
+              <div class="presentation-toolbar-popover">
+                <label>Reveal
+                  <select data-presentation-reveal>
+                    <option value="all">All content</option><option value="group">Groups of two</option>
+                    <option value="item">One item at a time</option><option value="timed">Timed reveal</option>
+                  </select>
+                </label>
+                <label data-reveal-interval-wrap hidden>Every <input data-reveal-interval type="number" min="2" max="60" value="5"> seconds</label>
+              </div>
+            </details>
+          </div>
+          <div class="presentation-toolbar-category" aria-label="Pointing">
+            <button type="button" class="presentation-icon-button" data-presentation-tool="pointer" aria-label="Laser pointer" aria-pressed="false" title="Laser pointer"><i class="fa-solid fa-location-crosshairs"></i><small>Point</small></button>
+          </div>
+          <div class="presentation-toolbar-category" aria-label="Classroom">
+            <details class="presentation-toolbar-menu">
+              <summary class="presentation-icon-button" aria-label="Class timer" title="Class timer"><i class="fa-solid fa-stopwatch"></i><small>Timer</small></summary>
+              <div class="presentation-toolbar-popover">
+                <label>Minutes <input data-presentation-timer-minutes type="number" min="1" max="120" value="5"></label>
+                <button type="button" class="presentation-icon-button" data-presentation-timer-start aria-label="Start timer" title="Start timer"><i class="fa-solid fa-play"></i><small>Start</small></button>
+                <button type="button" class="presentation-icon-button" data-presentation-timer-stop aria-label="Stop timer" title="Stop timer"><i class="fa-solid fa-stop"></i><small>Stop</small></button>
+                <strong data-presentation-timer-label aria-live="off"></strong>
+              </div>
+            </details>
+            <details class="presentation-toolbar-menu">
+              <summary class="presentation-icon-button" aria-label="Class poll" title="Class poll"><i class="fa-solid fa-square-poll-vertical"></i><small>Poll</small></summary>
+              <form class="presentation-toolbar-popover presentation-poll-form" data-presentation-poll-form>
+                <label>Question <input data-presentation-poll-question maxlength="240" placeholder="Ask your class"></label>
+                <fieldset class="presentation-poll-options" data-presentation-poll-options>
+                  <legend>Choices</legend>
+                  <div class="presentation-poll-option-row">
+                    <input data-presentation-poll-option maxlength="120" aria-label="Choice 1" placeholder="Choice 1" required>
+                    <button type="button" class="presentation-poll-option-remove" aria-label="Remove choice 1" title="Remove choice"><i class="fa-solid fa-minus"></i></button>
+                  </div>
+                  <div class="presentation-poll-option-row">
+                    <input data-presentation-poll-option maxlength="120" aria-label="Choice 2" placeholder="Choice 2" required>
+                    <button type="button" class="presentation-poll-option-remove" aria-label="Remove choice 2" title="Remove choice"><i class="fa-solid fa-minus"></i></button>
+                  </div>
+                  <button type="button" class="presentation-poll-option-add" data-presentation-poll-option-add><i class="fa-solid fa-plus"></i> Add choice</button>
+                </fieldset>
+                <button type="submit" class="presentation-icon-button" data-presentation-poll-start aria-label="Start poll" title="Start poll"><i class="fa-solid fa-paper-plane"></i><small>Start</small></button>
+                <button type="button" class="presentation-icon-button" data-presentation-poll-close aria-label="Close poll" title="Close poll"><i class="fa-solid fa-xmark"></i><small>Close</small></button>
+                <span data-presentation-poll-results aria-live="polite"></span>
+              </form>
+            </details>
+            <button type="button" class="presentation-icon-button" data-presentation-live aria-label="Start student follow" title="Start student follow"><i class="fa-solid fa-tower-broadcast"></i><small>Share</small></button>
+          </div>
+          <div class="presentation-toolbar-category" aria-label="View">
+            <button type="button" class="presentation-icon-button" data-presentation-presenter-view aria-label="Presenter notes" aria-pressed="false" title="Presenter notes"><i class="fa-solid fa-sticky-note"></i><small>Notes</small></button>
+            <button type="button" class="presentation-icon-button" data-presentation-fullscreen aria-label="Toggle full screen" title="Full screen"><i class="fa-solid fa-expand"></i><small>Full</small></button>
+            <button type="button" class="presentation-icon-button" data-presentation-close aria-label="Exit presentation" title="Exit"><i class="fa-solid fa-xmark"></i><small>Exit</small></button>
+          </div>
+        </nav>
+      </header>
+      <div class="presentation-live-sharing" data-presentation-live-sharing hidden>
+        <div class="presentation-live-controls" data-presentation-live-controls></div>
+        <section class="presentation-feedback-card presentation-pace-card" data-presentation-pace-summary aria-label="Class pace responses">
+          <h3><i class="fa-solid fa-gauge-high"></i> Class pace</h3>
+          <div class="presentation-feedback-items" data-presentation-pace-items></div>
+        </section>
+        <span class="presentation-reaction-notice" data-presentation-reaction-notice role="status" aria-live="polite"></span>
+        <section class="presentation-feedback-card presentation-poll-live-feedback" data-presentation-poll-live-feedback aria-label="Live poll results" aria-live="polite" hidden>
+          <h3><i class="fa-solid fa-square-poll-vertical"></i> Live poll</h3>
+          <div class="presentation-poll-feedback-content" data-presentation-poll-feedback></div>
+        </section>
+        <section class="presentation-feedback-card presentation-question-live-feedback" data-presentation-question-live-feedback aria-label="Student questions" hidden>
+          <h3><i class="fa-solid fa-circle-question"></i> Student questions</h3>
+          <div class="presentation-question-feedback-content" data-presentation-question-feedback></div>
+        </section>
+      </div>
+      <div class="presentation-viewer-progress" role="progressbar" aria-label="Slide progress" aria-valuemin="1" aria-valuemax="${slides.length}" aria-valuenow="1"><span data-presentation-progress></span></div>
+      <div class="presentation-viewer-layout">
+        <div class="presentation-viewer-stage" data-presentation-stage></div>
+        <aside class="presentation-presenter-notes" data-presentation-notes hidden>
+          <label>Private presenter notes<textarea data-presentation-notes-input rows="12" placeholder="Only you can see these notes."></textarea></label>
+          <p>Notes are private to this presenter and are never sent to student devices.</p>
+        </aside>
+      </div>
+      <footer class="presentation-viewer-controls"><span data-presentation-slide-count aria-live="polite"></span><span class="presentation-viewer-feedback" data-presentation-feedback role="status" aria-live="polite"></span></footer>
+      </div>`;
     document.body.append(dialog);
+    const fullscreenContent = dialog.querySelector(".presentation-fullscreen-content");
     const stage = dialog.querySelector("[data-presentation-stage]");
     const previous = dialog.querySelector("[data-presentation-previous]");
     const next = dialog.querySelector("[data-presentation-next]");
     const count = dialog.querySelector("[data-presentation-slide-count]");
     const liveButton = dialog.querySelector("[data-presentation-live]");
     const liveSharing = dialog.querySelector("[data-presentation-live-sharing]");
+    const liveControls = dialog.querySelector("[data-presentation-live-controls]");
     const revealSelect = dialog.querySelector("[data-presentation-reveal]");
     const revealInterval = dialog.querySelector("[data-reveal-interval]");
     const revealIntervalWrap = dialog.querySelector("[data-reveal-interval-wrap]");
@@ -6092,6 +6353,16 @@
     const notesInput = dialog.querySelector("[data-presentation-notes-input]");
     const timerLabel = dialog.querySelector("[data-presentation-timer-label]");
     const pollResults = dialog.querySelector("[data-presentation-poll-results]");
+    const pollLiveFeedback = dialog.querySelector("[data-presentation-poll-live-feedback]");
+    const pollFeedback = dialog.querySelector("[data-presentation-poll-feedback]");
+    const questionLiveFeedback = dialog.querySelector("[data-presentation-question-live-feedback]");
+    const questionFeedback = dialog.querySelector("[data-presentation-question-feedback]");
+    const pollOptionsContainer = dialog.querySelector("[data-presentation-poll-options]");
+    const feedback = dialog.querySelector("[data-presentation-feedback]");
+    const copyFeedback = dialog.querySelector("[data-presentation-copy-feedback]");
+    const paceSummary = dialog.querySelector("[data-presentation-pace-summary]");
+    const paceItems = dialog.querySelector("[data-presentation-pace-items]");
+    const reactionNotice = dialog.querySelector("[data-presentation-reaction-notice]");
     let activeSlide = 0;
     let liveSession = null;
     let stopLiveSession = async () => true;
@@ -6103,17 +6374,26 @@
     let annotations = [];
     let pointerState = null;
     let latestPointerState = null;
-    let activeTool = "pointer";
+    let activeTool = "none";
     let activeColor = "#e5484d";
-    let currentStroke = null;
+    let stateWritePending = 0;
     let pointerUpdateTimer = null;
     let pointerRequestPending = false;
     let pointerRequestPromise = Promise.resolve();
     let queuedPointerUpdate = false;
+    let liveStateWriteQueue = Promise.resolve();
     let ownerPollTimer = null;
     let presentationClock = null;
     let lastTimedReveal = Date.now();
     let timerEndAt = null;
+    let lastRenderedStateKey = "";
+    let lastReactionCounts = null;
+    let reactionNoticeTimer = null;
+    let fullscreenActive = false;
+    let lastPollSummary = "";
+    let lastQuestionSummary = "";
+    const feedbackPanels = { pace: true, poll: true, questions: false };
+    let pointerRenderFrame = null;
 
     const revealUnitCount = (slide, mode) => {
       const points = (Array.isArray(slide.key_points) ? slide.key_points : [])
@@ -6122,14 +6402,180 @@
       return Math.ceil(points.length / groupSize) + Number(Boolean(slide.visual))
         + Number(Boolean(slide.visual_suggestion)) + Number(Boolean(slide.activity));
     };
+    const revealedSlide = (slide, mode, step) => {
+      if (mode === "all") return slide;
+      const points = (Array.isArray(slide.key_points) ? slide.key_points : [])
+        .filter((point) => typeof point === "string" && point.trim()).slice(0, 12);
+      const groupSize = mode === "item" || mode === "timed" ? 1 : 2;
+      const pointGroups = Math.ceil(points.length / groupSize);
+      let remaining = Math.max(0, step - pointGroups);
+      const visible = { ...slide, key_points: points.slice(0, Math.min(points.length, step * groupSize)) };
+      for (const field of ["visual", "visual_suggestion", "activity"]) {
+        if (!slide[field]) continue;
+        if (remaining > 0) remaining--;
+        else delete visible[field];
+      }
+      return visible;
+    };
+    const setFeedback = (message, isError = false) => {
+      feedback.textContent = message;
+      feedback.classList.toggle("is-error", isError);
+    };
+    const updateReactionFeedback = (counts = {}, responses = []) => {
+      const labels = {
+        understood: "Understood",
+        confused: "Confused",
+        slower: "Slower",
+        faster: "Faster"
+      };
+      paceItems.replaceChildren();
+      Object.entries(labels).forEach(([key, label]) => {
+        const item = document.createElement("span");
+        item.className = `presentation-feedback-item presentation-feedback-${key}`;
+        const name = document.createElement("span");
+        name.textContent = label;
+        const value = document.createElement("strong");
+        value.textContent = String(Number(counts[key] || 0));
+        const respondents = document.createElement("small");
+        respondents.textContent = responses.filter((response) => response.reaction === key)
+          .map((response) => response.participant_name).join(", ");
+        item.append(name, value, respondents);
+        paceItems.append(item);
+      });
+      if (lastReactionCounts) {
+        const changes = Object.entries(labels)
+          .filter(([key]) => Number(counts[key] || 0) > Number(lastReactionCounts[key] || 0))
+          .map(([, label]) => label);
+        if (changes.length) {
+          reactionNotice.textContent = `Student response: ${changes.join(", ")}`;
+          if (reactionNoticeTimer !== null) window.clearTimeout(reactionNoticeTimer);
+          reactionNoticeTimer = window.setTimeout(() => {
+            reactionNotice.textContent = "";
+            reactionNoticeTimer = null;
+          }, 6000);
+        }
+      }
+      lastReactionCounts = { ...counts };
+    };
+    const renderPollFeedback = (poll) => {
+      const options = Array.isArray(poll.options) ? poll.options : [];
+      const counts = options.map((_, index) => Math.max(0, Number(poll.results?.[index] || 0)));
+      const totalVotes = counts.reduce((sum, value) => sum + value, 0);
+      pollFeedback.replaceChildren();
+      const question = document.createElement("p");
+      question.className = "presentation-poll-feedback-question";
+      question.textContent = String(poll.question || "Class poll");
+      const status = document.createElement("span");
+      status.className = `presentation-poll-status${poll.open ? " is-open" : ""}`;
+      status.textContent = poll.open ? "Open" : "Closed";
+      const heading = document.createElement("div");
+      heading.className = "presentation-poll-feedback-heading";
+      heading.append(question, status);
+      const rows = document.createElement("div");
+      rows.className = "presentation-poll-feedback-options";
+      options.forEach((option, index) => {
+        const votes = counts[index];
+        const percentage = totalVotes ? Math.round((votes / totalVotes) * 100) : 0;
+        const row = document.createElement("div");
+        row.className = "presentation-poll-feedback-option";
+        const label = document.createElement("span");
+        label.className = "presentation-poll-feedback-label";
+        label.textContent = String(option);
+        const meter = document.createElement("span");
+        meter.className = "presentation-poll-feedback-meter";
+        meter.setAttribute("role", "img");
+        meter.setAttribute("aria-label", `${percentage}%`);
+        const fill = document.createElement("span");
+        fill.style.width = `${percentage}%`;
+        meter.append(fill);
+        const countLabel = document.createElement("strong");
+        countLabel.append(document.createTextNode(`${votes} · ${percentage}%`));
+        const respondents = document.createElement("small");
+        respondents.textContent = (poll.responses || [])
+          .filter((response) => Number(response.answer_index) === index)
+          .map((response) => response.participant_name).join(", ");
+        countLabel.append(respondents);
+        row.append(label, meter, countLabel);
+        rows.append(row);
+      });
+      const footer = document.createElement("small");
+      footer.textContent = `${totalVotes} ${totalVotes === 1 ? "response" : "responses"}`;
+      pollFeedback.append(heading, rows, footer);
+    };
+    const renderQuestionFeedback = (questions = []) => {
+      const summary = JSON.stringify(questions);
+      if (summary === lastQuestionSummary) return;
+      lastQuestionSummary = summary;
+      questionFeedback.replaceChildren();
+      if (!questions.length) {
+        const empty = document.createElement("p");
+        empty.className = "presentation-question-empty";
+        empty.textContent = "Student questions will appear here.";
+        questionFeedback.append(empty);
+        return;
+      }
+      questions.slice(-30).forEach((question) => {
+        const card = document.createElement("article");
+        card.className = "presentation-question-item";
+        const heading = document.createElement("strong");
+        heading.textContent = question.participant_name;
+        const text = document.createElement("p");
+        text.textContent = question.question;
+        const form = document.createElement("form");
+        form.dataset.presentationQuestionId = String(question.id);
+        const reply = document.createElement("textarea");
+        reply.name = "feedback";
+        reply.maxLength = 1000;
+        reply.required = true;
+        reply.rows = 2;
+        reply.placeholder = "Reply to this student…";
+        reply.value = question.teacher_feedback || "";
+        const button = document.createElement("button");
+        button.type = "submit";
+        button.className = "presentation-question-reply";
+        button.innerHTML = `<i class="fa-solid fa-reply"></i><small>${question.teacher_feedback ? "Update reply" : "Reply"}</small>`;
+        form.append(reply, button);
+        card.append(heading, text, form);
+        questionFeedback.append(card);
+      });
+    };
+    questionFeedback.addEventListener("submit", async (event) => {
+      const form = event.target.closest("form[data-presentation-question-id]");
+      if (!form) return;
+      event.preventDefault();
+      const reply = form.elements.namedItem("feedback").value.trim();
+      if (!reply || !liveSession) return;
+      const button = form.querySelector("button");
+      button.disabled = true;
+      try {
+        await workspaceRequest(
+          `/api/teacher/presentation-simulations/${liveSession.id}/questions/${form.dataset.presentationQuestionId}`,
+          "PUT",
+          { feedback: reply },
+          { silent: true }
+        );
+        lastQuestionSummary = "";
+        const state = await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`, "GET", null, { silent: true });
+        applyLiveState(state);
+      } catch (error) {
+        button.disabled = false;
+        setFeedback(error instanceof Error ? error.message : "The reply could not be sent.", true);
+      }
+    });
     const setTool = (tool) => {
-      activeTool = tool;
+      activeTool = activeTool === tool ? "none" : tool;
       dialog.querySelectorAll("[data-presentation-tool]").forEach((button) => {
-        const selected = button.dataset.presentationTool === tool;
+        const selected = button.dataset.presentationTool === activeTool;
         button.classList.toggle("is-selected", selected);
         button.setAttribute("aria-pressed", String(selected));
       });
-      stage.dataset.tool = tool;
+      stage.dataset.tool = activeTool;
+      if (activeTool !== "pointer" && pointerState?.active) {
+        pointerState = { ...pointerState, active: false };
+        latestPointerState = pointerState;
+        updateTeacherPointer();
+        queuePointerUpdate(false);
+      }
     };
     const updateNotes = () => {
       const slide = slides[activeSlide];
@@ -6145,6 +6591,8 @@
     };
     const applyLiveState = (state) => {
       liveState = state;
+      const stateKey = JSON.stringify([state.active_slide, state.reveal_mode, state.reveal_step]);
+      const shouldRender = stateKey !== lastRenderedStateKey;
       if (Number.isInteger(state.active_slide)) activeSlide = state.active_slide;
       revealMode = ["all", "group", "item", "timed"].includes(state.reveal_mode) ? state.reveal_mode : revealMode;
       revealStep = Number(state.reveal_step) || 0;
@@ -6157,20 +6605,63 @@
       revealIntervalWrap.hidden = revealMode !== "timed";
       if (Number(state.reveal_interval_seconds) >= 2) revealInterval.value = String(state.reveal_interval_seconds);
       const poll = state.active_poll;
+      updateReactionFeedback(state.reaction_counts || {}, state.reaction_responses || []);
+      paceSummary.hidden = !feedbackPanels.pace;
+      renderQuestionFeedback(Array.isArray(state.questions) ? state.questions : []);
+      questionLiveFeedback.hidden = !feedbackPanels.questions;
       if (poll) {
-        pollResults.textContent = `${poll.question} · ${poll.options.map((option, index) => `${option}: ${Number(poll.results?.[index] || 0)}`).join(" · ")}${poll.open ? " · Open" : " · Closed"}`;
+        const options = Array.isArray(poll.options) ? poll.options : [];
+        const summary = `${poll.question} · ${options.map((option, index) => `${option}: ${Number(poll.results?.[index] || 0)}`).join(" · ")} · ${poll.open ? "Open" : "Closed"}`;
+        const pollKey = JSON.stringify([poll.question, options, poll.results, poll.responses, poll.open]);
+        if (lastPollSummary !== pollKey) {
+          renderPollFeedback(poll);
+          pollResults.textContent = summary;
+        }
+        pollLiveFeedback.hidden = !feedbackPanels.poll;
+        lastPollSummary = pollKey;
       } else {
-        pollResults.textContent = "No open classroom check.";
+        if (pollResults.textContent !== "No open classroom check.") pollResults.textContent = "No open classroom check.";
+        if (lastPollSummary) {
+          pollFeedback.replaceChildren();
+          const closed = document.createElement("p");
+          closed.className = "presentation-poll-feedback-closed";
+          closed.textContent = "Poll closed.";
+          pollFeedback.append(closed);
+          pollLiveFeedback.hidden = !feedbackPanels.poll;
+          window.setTimeout(() => {
+            if (!liveState?.active_poll) pollLiveFeedback.hidden = true;
+          }, 5000);
+        } else {
+          pollFeedback.replaceChildren();
+          pollLiveFeedback.hidden = true;
+        }
+        lastPollSummary = "";
       }
-      updateNotes();
-      renderActiveSlide();
+      if (shouldRender) {
+        renderActiveSlide();
+        lastRenderedStateKey = stateKey;
+      } else {
+        updateTeacherPointer();
+      }
       updateTimerDisplay();
     };
-    const updateLiveState = async (payload) => {
+    const updateLiveState = async (payload, { silent = true } = {}) => {
       if (!liveSession) return null;
-      const state = await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`, "PUT", payload);
-      applyLiveState(state);
-      return state;
+      const sessionId = liveSession.id;
+      const write = async () => {
+        if (!liveSession || liveSession.id !== sessionId) return null;
+        stateWritePending++;
+        try {
+          const state = await workspaceRequest(`/api/teacher/presentation-simulations/${sessionId}`, "PUT", payload, { silent });
+          if (liveSession?.id === sessionId) applyLiveState(state);
+          return state;
+        } finally {
+          stateWritePending--;
+        }
+      };
+      const queuedWrite = liveStateWriteQueue.then(write, write);
+      liveStateWriteQueue = queuedWrite.catch(() => null);
+      return queuedWrite;
     };
     const currentPoint = (event) => {
       const bounds = stage.querySelector(".presentation-slide-preview")?.getBoundingClientRect();
@@ -6180,35 +6671,46 @@
         Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height))
       ];
     };
-    const drawTeacherAnnotations = (article) => {
-      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("viewBox", "0 0 1000 1000");
-      svg.setAttribute("preserveAspectRatio", "none");
-      svg.classList.add("presentation-annotation-layer");
-      annotations.forEach((stroke) => {
-        if (!Array.isArray(stroke.points) || stroke.points.length < 2) return;
-        const line = document.createElementNS(svg.namespaceURI, "polyline");
-        line.setAttribute("points", stroke.points.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" "));
-        line.setAttribute("fill", "none");
-        line.setAttribute("stroke", stroke.color);
-        line.setAttribute("stroke-width", stroke.tool === "highlighter" ? "22" : "8");
-        line.setAttribute("stroke-linecap", "round");
-        line.setAttribute("stroke-linejoin", "round");
-        if (stroke.tool === "highlighter") line.setAttribute("stroke-opacity", ".28");
-        svg.append(line);
-      });
-      article.append(svg);
+    const updateTeacherPointer = (article = stage.querySelector(".presentation-slide-preview")) => {
+      if (!article) return;
+      let laser = article.querySelector(".presentation-teacher-laser");
       if (pointerState?.active) {
-        const laser = document.createElement("span");
-        laser.className = "presentation-teacher-laser";
+        if (!laser) {
+          laser = document.createElement("span");
+          laser.className = "presentation-teacher-laser";
+          laser.setAttribute("aria-hidden", "true");
+          article.append(laser);
+        }
         laser.style.left = `${pointerState.x * 100}%`;
         laser.style.top = `${pointerState.y * 100}%`;
         laser.style.setProperty("--laser-color", pointerState.color);
-        article.append(laser);
+      } else {
+        laser?.remove();
       }
     };
+    const refreshAnnotationLayer = () => {
+      updateTeacherPointer();
+    };
+    const fitSlideToStage = () => {
+      const article = stage.querySelector(".presentation-slide-preview");
+      if (!article || !stage.clientWidth || !stage.clientHeight) return;
+      const width = Math.min(1100, stage.clientWidth, stage.clientHeight * 16 / 9);
+      article.style.width = `${width}px`;
+      article.style.height = `${width * 9 / 16}px`;
+    };
+    const stageResizeObserver = typeof ResizeObserver === "function"
+      ? new ResizeObserver(() => window.requestAnimationFrame(fitSlideToStage))
+      : null;
+    stageResizeObserver?.observe(stage);
     const renderActiveSlide = () => {
-      stage.innerHTML = presentationSlideMarkup(slides[activeSlide], activeSlide, presentation);
+      const visibleSlide = revealedSlide(slides[activeSlide], revealMode, revealStep);
+      stage.innerHTML = presentationSlideMarkup(visibleSlide, activeSlide, presentation);
+      if (revealMode !== "all") {
+        const marker = document.createElement("small");
+        marker.className = "presentation-local-reveal-progress";
+        marker.textContent = `Content ${Math.min(revealStep, revealUnitCount(slides[activeSlide], revealMode))} of ${revealUnitCount(slides[activeSlide], revealMode)}`;
+        stage.querySelector(".presentation-slide-preview")?.append(marker);
+      }
       const revealedCount = revealUnitCount(slides[activeSlide], revealMode);
       count.textContent = `Slide ${activeSlide + 1} of ${slides.length}${revealMode === "all" ? "" : ` · ${revealStep} of ${revealedCount} revealed`}`;
       previous.disabled = slideUpdatePending || (activeSlide === 0 && revealStep === 0);
@@ -6224,8 +6726,8 @@
       progressBar.setAttribute("aria-valuenow", String(Math.min(completed, total)));
       const notes = slides[activeSlide].presenter_notes || slides[activeSlide].speaker_notes || slides[activeSlide].notes || "";
       if (notesInput.value !== notes) notesInput.value = notes;
-      const article = stage.querySelector(".presentation-slide-preview");
-      if (article) drawTeacherAnnotations(article);
+      fitSlideToStage();
+      refreshAnnotationLayer();
     };
     const moveToSlide = async (slideIndex) => {
       if (slideUpdatePending || slideIndex < 0 || slideIndex >= slides.length || slideIndex === activeSlide) return;
@@ -6254,11 +6756,12 @@
       renderActiveSlide();
       try {
         await updateLiveState({ active_slide: activeSlide, reveal_step: 0, annotations: [], pointer: null });
+        lastRenderedStateKey = JSON.stringify([liveState.active_slide, liveState.reveal_mode, liveState.reveal_step]);
         lastTimedReveal = Date.now();
       } catch (error) {
         activeSlide = previousSlide;
         revealStep = previousReveal;
-        showToast(error instanceof Error ? error.message : "The student presentation could not be updated.", "error");
+        setFeedback(error instanceof Error ? error.message : "The student presentation could not be updated.", true);
       } finally {
         slideUpdatePending = false;
         renderActiveSlide();
@@ -6266,30 +6769,31 @@
     };
     const advance = async (direction = 1) => {
       if (slideUpdatePending) return;
-      if (direction > 0 && liveSession && revealMode !== "all"
+      if (direction > 0 && revealMode !== "all"
         && revealStep < revealUnitCount(slides[activeSlide], revealMode)) {
         revealStep++;
         lastTimedReveal = Date.now();
         renderActiveSlide();
         try {
-          await updateLiveState({ reveal_mode: revealMode, reveal_step: revealStep });
+          if (liveSession) await updateLiveState({ reveal_mode: revealMode, reveal_step: revealStep });
+          else setFeedback("");
         } catch (error) {
           revealStep--;
           renderActiveSlide();
-          showToast(error instanceof Error ? error.message : "The reveal step could not be synchronized.", "error");
+          setFeedback(error instanceof Error ? error.message : "The reveal step could not be synchronized.", true);
         }
         return;
       }
-      if (direction < 0 && liveSession && revealMode !== "all" && revealStep > 0) {
+      if (direction < 0 && revealMode !== "all" && revealStep > 0) {
         revealStep--;
         lastTimedReveal = Date.now();
         renderActiveSlide();
         try {
-          await updateLiveState({ reveal_mode: revealMode, reveal_step: revealStep });
+          if (liveSession) await updateLiveState({ reveal_mode: revealMode, reveal_step: revealStep });
         } catch (error) {
           revealStep++;
           renderActiveSlide();
-          showToast(error instanceof Error ? error.message : "The reveal step could not be synchronized.", "error");
+          setFeedback(error instanceof Error ? error.message : "The reveal step could not be synchronized.", true);
         }
         return;
       }
@@ -6303,6 +6807,7 @@
       revealIntervalWrap.hidden = revealMode !== "timed";
       lastTimedReveal = Date.now();
       renderActiveSlide();
+      lastRenderedStateKey = "";
       if (liveSession) {
         try {
           await updateLiveState({
@@ -6311,45 +6816,24 @@
             reveal_interval_seconds: Number(revealInterval.value)
           });
         } catch (error) {
-          showToast(error instanceof Error ? error.message : "The reveal mode could not be synchronized.", "error");
+          setFeedback(error instanceof Error ? error.message : "The reveal mode could not be synchronized.", true);
         }
       }
     });
     revealInterval.addEventListener("change", () => {
       if (liveSession && revealMode === "timed") {
         void updateLiveState({ reveal_interval_seconds: Number(revealInterval.value) }).catch((error) =>
-          showToast(error instanceof Error ? error.message : "Reveal timing could not be saved.", "error")
+          setFeedback(error instanceof Error ? error.message : "Reveal timing could not be saved.", true)
         );
       }
     });
     dialog.querySelectorAll("[data-presentation-tool]").forEach((button) =>
       button.addEventListener("click", () => setTool(button.dataset.presentationTool))
     );
-    dialog.querySelector("[data-presentation-color]").addEventListener("change", (event) => {
-      activeColor = event.currentTarget.value;
-    });
-    const saveAnnotations = async () => {
-      if (!liveSession) return;
-      try {
-        await updateLiveState({ annotations });
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : "The drawing could not be shared.", "error");
-      }
-    };
-    dialog.querySelector("[data-presentation-undo]").addEventListener("click", () => {
-      annotations.pop();
-      renderActiveSlide();
-      void saveAnnotations();
-    });
-    dialog.querySelector("[data-presentation-clear]").addEventListener("click", () => {
-      annotations = [];
-      renderActiveSlide();
-      void saveAnnotations();
-    });
     const queuePointerUpdate = (active) => {
       if (pointerState) pointerState = { ...pointerState, color: activeColor, active };
       latestPointerState = pointerState;
-      if (pointerUpdateTimer !== null) window.clearTimeout(pointerUpdateTimer);
+      if (pointerUpdateTimer !== null) return;
       pointerUpdateTimer = window.setTimeout(async () => {
         pointerUpdateTimer = null;
         if (!liveSession) return;
@@ -6360,7 +6844,7 @@
         pointerRequestPromise = (async () => {
           pointerRequestPending = true;
           try {
-            await updateLiveState({ pointer: latestPointerState });
+            await updateLiveState({ pointer: latestPointerState }, { silent: true });
           } catch (error) {
             console.warn("The teacher pointer could not be synchronized.", error);
           } finally {
@@ -6373,67 +6857,56 @@
           }
         })();
         await pointerRequestPromise;
-      }, 160);
+      }, 75);
+    };
+    const renderPointerOnFrame = () => {
+      if (pointerRenderFrame !== null) return;
+      pointerRenderFrame = window.requestAnimationFrame(() => {
+        pointerRenderFrame = null;
+        updateTeacherPointer();
+      });
     };
     stage.addEventListener("pointerdown", (event) => {
       const point = currentPoint(event);
       if (!point) return;
       if (activeTool === "pointer") {
+        event.preventDefault();
+      }
+      if (activeTool === "pointer") {
         pointerState = { x: point[0], y: point[1], color: activeColor, active: true };
         latestPointerState = pointerState;
-        renderActiveSlide();
+        renderPointerOnFrame();
         queuePointerUpdate(true);
-      } else if (activeTool === "pen" || activeTool === "highlighter") {
-        if (annotations.length >= 25) annotations.shift();
-        currentStroke = { tool: activeTool, color: activeColor, points: [point] };
-        annotations.push(currentStroke);
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } else if (activeTool === "eraser") {
-        let nearest = -1;
-        let nearestDistance = 0.05;
-        annotations.forEach((stroke, index) => stroke.points.forEach(([x, y]) => {
-          const distance = Math.hypot(x - point[0], y - point[1]);
-          if (distance < nearestDistance) {
-            nearestDistance = distance;
-            nearest = index;
-          }
-        }));
-        if (nearest >= 0) {
-          annotations.splice(nearest, 1);
-          renderActiveSlide();
-          void saveAnnotations();
+      }
+    });
+    document.addEventListener("pointermove", (event) => {
+      if (activeTool !== "pointer" || !dialog.open) return;
+      const article = stage.querySelector(".presentation-slide-preview");
+      const bounds = article?.getBoundingClientRect();
+      if (!bounds || event.clientX < bounds.left || event.clientX > bounds.right
+        || event.clientY < bounds.top || event.clientY > bounds.bottom) {
+        if (pointerState?.active) {
+          pointerState = { ...pointerState, active: false };
+          latestPointerState = pointerState;
+          updateTeacherPointer(article);
+          queuePointerUpdate(false);
         }
+        return;
       }
+      const point = [
+        (event.clientX - bounds.left) / bounds.width,
+        (event.clientY - bounds.top) / bounds.height
+      ];
+      pointerState = { x: point[0], y: point[1], color: activeColor, active: true };
+      latestPointerState = pointerState;
+      renderPointerOnFrame();
+      queuePointerUpdate(true);
     });
-    stage.addEventListener("pointermove", (event) => {
-      const point = currentPoint(event);
-      if (!point) return;
-      if (currentStroke) {
-        const last = currentStroke.points[currentStroke.points.length - 1];
-        if (Math.hypot(point[0] - last[0], point[1] - last[1]) > 0.003
-          && currentStroke.points.length < 100) currentStroke.points.push(point);
-        renderActiveSlide();
-      } else if (activeTool === "pointer") {
-        pointerState = { x: point[0], y: point[1], color: activeColor, active: true };
-        latestPointerState = pointerState;
-        renderActiveSlide();
-        queuePointerUpdate(true);
-      }
-    });
-    const finishStroke = () => {
-      if (!currentStroke) return;
-      if (currentStroke.points.length < 2) annotations.pop();
-      currentStroke = null;
-      renderActiveSlide();
-      void saveAnnotations();
-    };
-    stage.addEventListener("pointerup", finishStroke);
-    stage.addEventListener("pointercancel", finishStroke);
     stage.addEventListener("pointerleave", () => {
-      if (currentStroke) finishStroke();
       if (activeTool === "pointer" && pointerState?.active) {
         pointerState.active = false;
-        renderActiveSlide();
+        latestPointerState = pointerState;
+        refreshAnnotationLayer();
         queuePointerUpdate(false);
       }
     });
@@ -6442,19 +6915,57 @@
       const visible = notesPanel.hidden;
       notesPanel.hidden = !visible;
       event.currentTarget.setAttribute("aria-pressed", String(visible));
+      window.requestAnimationFrame(fitSlideToStage);
     });
     dialog.querySelector("[data-presentation-fullscreen]").addEventListener("click", async () => {
+      const button = dialog.querySelector("[data-presentation-fullscreen]");
+      if (!document.fullscreenElement && dialog.classList.contains("is-fullscreen-fallback")) {
+        fullscreenActive = false;
+        dialog.classList.remove("is-fullscreen-fallback");
+        handleFullscreenChange();
+        return;
+      }
       try {
-        if (document.fullscreenElement) await document.exitFullscreen();
-        else await dialog.requestFullscreen();
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        } else {
+          if (typeof fullscreenContent.requestFullscreen !== "function") {
+            throw new Error("Full screen is not supported by this browser.");
+          }
+          await fullscreenContent.requestFullscreen();
+        }
       } catch (error) {
-        showToast(error instanceof Error ? `Full screen is unavailable: ${error.message}` : "Full screen is unavailable.", "error");
+        fullscreenActive = document.fullscreenElement === fullscreenContent || !document.fullscreenElement;
+        dialog.classList.toggle("is-fullscreen-fallback", fullscreenActive && !document.fullscreenElement);
+        button.setAttribute("aria-pressed", String(fullscreenActive));
+        button.title = fullscreenActive ? "Exit full screen" : "Full screen";
+        button.setAttribute("aria-label", fullscreenActive ? "Exit full screen" : "Toggle full screen");
+        button.querySelector("i").className = `fa-solid ${fullscreenActive ? "fa-compress" : "fa-expand"}`;
+        button.querySelector("small").textContent = fullscreenActive ? "Exit" : "Full";
+        setFeedback(error instanceof Error
+          ? `Browser fullscreen unavailable; using presentation view instead. ${error.message}`
+          : "Browser fullscreen unavailable; using presentation view instead.");
       }
     });
+    const handleFullscreenChange = () => {
+      fullscreenActive = document.fullscreenElement === fullscreenContent;
+      const button = dialog.querySelector("[data-presentation-fullscreen]");
+      if (!button) return;
+      button.setAttribute("aria-pressed", String(fullscreenActive));
+      button.title = fullscreenActive ? "Exit full screen" : "Full screen";
+      button.setAttribute("aria-label", fullscreenActive ? "Exit full screen" : "Toggle full screen");
+      button.querySelector("i").className = `fa-solid ${fullscreenActive ? "fa-compress" : "fa-expand"}`;
+      button.querySelector("small").textContent = fullscreenActive ? "Exit" : "Full";
+      dialog.classList.toggle("is-fullscreen-fallback", false);
+      fitSlideToStage();
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    const handleViewportResize = () => window.requestAnimationFrame(fitSlideToStage);
+    window.addEventListener("resize", handleViewportResize);
     dialog.querySelector("[data-presentation-timer-start]").addEventListener("click", async () => {
       const minutes = Number(dialog.querySelector("[data-presentation-timer-minutes]").value);
       if (!Number.isInteger(minutes) || minutes < 1 || minutes > 120) {
-        showToast("Choose a timer between 1 and 120 minutes.", "error");
+        setFeedback("Choose a timer between 1 and 120 minutes.", true);
         return;
       }
       timerEndAt = Date.now() + minutes * 60_000;
@@ -6463,7 +6974,7 @@
         try {
           await updateLiveState({ timer_duration_seconds: minutes * 60 });
         } catch (error) {
-          showToast(error instanceof Error ? error.message : "The class timer could not be started.", "error");
+          setFeedback(error instanceof Error ? error.message : "The class timer could not be started.", true);
         }
       }
     });
@@ -6474,41 +6985,94 @@
         try {
           await updateLiveState({ timer_duration_seconds: 0 });
         } catch (error) {
-          showToast(error instanceof Error ? error.message : "The class timer could not be stopped.", "error");
+          setFeedback(error instanceof Error ? error.message : "The class timer could not be stopped.", true);
         }
       }
     });
     dialog.querySelector("[data-presentation-poll-form]").addEventListener("submit", async (event) => {
       event.preventDefault();
       const question = dialog.querySelector("[data-presentation-poll-question]").value.trim();
-      const options = dialog.querySelector("[data-presentation-poll-options]").value.split(/\r?\n/).map((option) => option.trim()).filter(Boolean);
+      const options = [...pollOptionsContainer.querySelectorAll("[data-presentation-poll-option]")]
+        .map((option) => option.value.trim());
       if (!liveSession) {
-        showToast("Start student follow before opening a classroom check.", "error");
+        setFeedback("Start student follow before opening a classroom check.", true);
         return;
       }
-      if (!question || options.length < 2 || options.length > 6) {
-        showToast("Add a poll question and between two and six choices.", "error");
+      if (!question || options.length < 2 || options.length > 6 || options.some((option) => !option)) {
+        setFeedback("Add a poll question and between two and six choices.", true);
         return;
       }
       try {
-        await updateLiveState({ active_poll: { id: crypto.randomUUID(), question, options, open: true } });
-        showToast("Classroom check is live.");
+        const pollId = typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : [...crypto.getRandomValues(new Uint8Array(16))].map((value) => value.toString(16).padStart(2, "0")).join("");
+        await updateLiveState({ active_poll: { id: pollId, question, options, open: true } });
+        dialog.querySelector("[data-presentation-poll-form]").closest("details").open = false;
+        setFeedback("");
       } catch (error) {
-        showToast(error instanceof Error ? error.message : "The classroom check could not be started.", "error");
+        setFeedback(error instanceof Error ? error.message : "The classroom check could not be started.", true);
+      }
+    });
+    pollOptionsContainer.addEventListener("click", (event) => {
+      const addButton = event.target.closest("[data-presentation-poll-option-add]");
+      if (addButton) {
+        const currentOptions = pollOptionsContainer.querySelectorAll("[data-presentation-poll-option]");
+        if (currentOptions.length >= 6) {
+          setFeedback("A poll can have at most six choices.", true);
+          return;
+        }
+        const row = document.createElement("div");
+        row.className = "presentation-poll-option-row";
+        const number = currentOptions.length + 1;
+        const input = document.createElement("input");
+        input.dataset.presentationPollOption = "";
+        input.maxLength = 120;
+        input.required = true;
+        input.setAttribute("aria-label", `Choice ${number}`);
+        input.placeholder = `Choice ${number}`;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "presentation-poll-option-remove";
+        remove.setAttribute("aria-label", `Remove choice ${number}`);
+        remove.title = "Remove choice";
+        remove.innerHTML = '<i class="fa-solid fa-minus"></i>';
+        row.append(input, remove);
+        addButton.before(row);
+        input.focus();
+        return;
+      }
+      const removeButton = event.target.closest(".presentation-poll-option-remove");
+      if (removeButton) {
+        const rows = pollOptionsContainer.querySelectorAll(".presentation-poll-option-row");
+        if (rows.length <= 2) {
+          setFeedback("A poll needs at least two choices.", true);
+          return;
+        }
+        removeButton.closest(".presentation-poll-option-row").remove();
+        pollOptionsContainer.querySelectorAll(".presentation-poll-option-row").forEach((row, index) => {
+          const number = index + 1;
+          row.querySelector("input").setAttribute("aria-label", `Choice ${number}`);
+          row.querySelector("input").placeholder = `Choice ${number}`;
+          row.querySelector("button").setAttribute("aria-label", `Remove choice ${number}`);
+        });
       }
     });
     dialog.querySelector("[data-presentation-poll-close]").addEventListener("click", async () => {
       if (!liveState?.active_poll) return;
       try {
         await updateLiveState({ active_poll: { ...liveState.active_poll, open: false } });
+        dialog.querySelector("[data-presentation-poll-form]").closest("details").open = false;
       } catch (error) {
-        showToast(error instanceof Error ? error.message : "The classroom check could not be closed.", "error");
+        setFeedback(error instanceof Error ? error.message : "The classroom check could not be closed.", true);
       }
     });
     liveButton.addEventListener("click", async () => {
       liveButton.disabled = true;
-      liveButton.textContent = "Starting live follow…";
+      liveButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><small>Wait</small>';
       try {
+        const startingSlide = activeSlide;
+        const startingReveal = revealStep;
+        const startingRevealMode = revealMode;
         const result = await workspaceRequest("/api/teacher/presentation-simulations", "POST", {
           title: title || presentation.title || "Class presentation",
           presentation: {
@@ -6524,42 +7088,83 @@
         liveSession = { id: result.id, url: result.url };
         liveState = await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`);
         applyLiveState(liveState);
-        ownerPollTimer = window.setInterval(async () => {
-          if (!liveSession || dialog.hidden) return;
+        activeSlide = startingSlide;
+        revealStep = startingReveal;
+        revealMode = startingRevealMode;
+        await updateLiveState({
+          active_slide: activeSlide,
+          reveal_step: revealStep,
+          reveal_mode: revealMode
+        });
+        const pollOwnerState = async () => {
+          if (!liveSession || !dialog.open) return;
           try {
-            applyLiveState(await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`));
+            const state = await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`, "GET", null, { silent: true });
+            if (stateWritePending === 0) applyLiveState(state);
           } catch (error) {
-            liveStatus.textContent = error instanceof Error ? `Reconnecting to students… ${error.message}` : "Reconnecting to students…";
+            setFeedback(error instanceof Error ? `Reconnecting… ${error.message}` : "Reconnecting to students…", true);
           }
-        }, 1200);
+          if (liveSession && dialog.open) ownerPollTimer = window.setTimeout(pollOwnerState, 500);
+        };
+        ownerPollTimer = window.setTimeout(pollOwnerState, 500);
+        const linkLabel = document.createElement("span");
+        linkLabel.className = "presentation-live-label";
+        linkLabel.innerHTML = '<i class="fa-solid fa-users"></i> Student link';
         const linkInput = document.createElement("input");
         linkInput.className = "presentation-live-link";
-        linkInput.type = "url";
+        linkInput.type = "text";
         linkInput.readOnly = true;
         linkInput.setAttribute("aria-label", "Student presentation follow link");
         linkInput.value = result.url;
         const copyButton = document.createElement("button");
         copyButton.type = "button";
-        copyButton.className = "small-button";
-        copyButton.textContent = "Copy student link";
+        copyButton.className = "presentation-icon-button";
+        copyButton.innerHTML = '<i class="fa-solid fa-copy"></i><small>Copy</small>';
+        copyButton.setAttribute("aria-label", "Copy student link");
+        copyButton.title = "Copy student link";
         copyButton.addEventListener("click", async () => {
           try {
             await navigator.clipboard.writeText(result.url);
-            showToast("Student presentation link copied.");
+            copyFeedback.textContent = "Copied!";
+            setFeedback("");
           } catch (error) {
             linkInput.focus();
             linkInput.select();
-            showToast("Copy is unavailable in this browser. The link is selected so you can copy it manually.", "error");
+            copyFeedback.textContent = "Link selected — copy it";
+            setFeedback(error instanceof Error ? error.message : "Copy is unavailable; copy the selected link.", true);
           }
         });
         const endButton = document.createElement("button");
         endButton.type = "button";
-        endButton.className = "small-button";
-        endButton.textContent = "End live session";
+        endButton.className = "presentation-icon-button";
+        endButton.innerHTML = '<i class="fa-solid fa-stop"></i><small>End</small>';
+        endButton.setAttribute("aria-label", "End live session");
+        endButton.title = "End live session";
         const liveStatus = document.createElement("span");
         liveStatus.className = "presentation-live-status";
         liveStatus.setAttribute("aria-live", "polite");
         liveStatus.textContent = "Students follow reveals, drawings, polls, reactions and the class timer. Link expires in 12 hours.";
+        liveControls.replaceChildren(linkLabel, linkInput, copyButton, endButton, copyFeedback, liveStatus);
+        const visibilityButton = (key, label, icon, panel) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "presentation-icon-button presentation-feedback-toggle";
+          button.setAttribute("aria-pressed", String(feedbackPanels[key]));
+          button.setAttribute("aria-label", `${feedbackPanels[key] ? "Hide" : "Show"} ${label}`);
+          button.innerHTML = `<i class="fa-solid fa-${icon}"></i><small>${feedbackPanels[key] ? "Hide" : "Show"} ${label}</small>`;
+          button.addEventListener("click", () => {
+            feedbackPanels[key] = !feedbackPanels[key];
+            const visible = feedbackPanels[key];
+            button.setAttribute("aria-pressed", String(visible));
+            button.setAttribute("aria-label", `${visible ? "Hide" : "Show"} ${label}`);
+            button.innerHTML = `<i class="fa-solid fa-${visible ? icon : "eye"}"></i><small>${visible ? "Hide" : "Show"} ${label}</small>`;
+            panel.hidden = !visible;
+          });
+          liveControls.append(button);
+        };
+        visibilityButton("pace", "Pace", "gauge-high", paceSummary);
+        visibilityButton("poll", "Poll", "square-poll-vertical", pollLiveFeedback);
+        visibilityButton("questions", "Q&A", "circle-question", questionLiveFeedback);
         const endLiveSession = async () => {
           if (!liveSession) return true;
           if (stoppingLiveSession) return stoppingLiveSession;
@@ -6572,9 +7177,10 @@
                 status: "ended"
               });
               if (liveSession?.id === sessionId) liveSession = null;
-              if (ownerPollTimer !== null) window.clearInterval(ownerPollTimer);
+              if (ownerPollTimer !== null) window.clearTimeout(ownerPollTimer);
               ownerPollTimer = null;
-              endButton.textContent = "Session ended";
+              endButton.innerHTML = '<i class="fa-solid fa-check"></i><small>Done</small>';
+              endButton.setAttribute("aria-label", "Session ended");
               liveSharing.dataset.ended = "true";
               liveStatus.textContent = "Live session ended. Students can no longer view the presentation.";
               copyButton.disabled = true;
@@ -6584,7 +7190,7 @@
             } catch (error) {
               endButton.disabled = false;
               stoppingLiveSession = null;
-              showToast(error instanceof Error ? error.message : "The live session could not be ended.", "error");
+              setFeedback(error instanceof Error ? error.message : "The live session could not be ended.", true);
               return false;
             }
           })();
@@ -6592,20 +7198,21 @@
         };
         stopLiveSession = endLiveSession;
         endButton.addEventListener("click", () => void endLiveSession());
-        liveSharing.replaceChildren(linkInput, copyButton, endButton, liveStatus);
         liveSharing.hidden = false;
+        window.requestAnimationFrame(fitSlideToStage);
         liveButton.disabled = true;
-        liveButton.textContent = "Live follow is on";
-        showToast("Student follow is ready. Share the link and control reveals, annotations, polls and timer from this toolbar.");
+        liveButton.innerHTML = '<i class="fa-solid fa-tower-broadcast"></i><small>Live</small>';
+        liveButton.setAttribute("aria-label", "Student follow is live");
+        setFeedback("Student follow is live.");
       } catch (error) {
         liveButton.disabled = false;
-        liveButton.textContent = "Start student follow";
-        showToast(error instanceof Error ? error.message : "The live presentation could not be started.", "error");
+        liveButton.innerHTML = '<i class="fa-solid fa-tower-broadcast"></i><small>Share</small>';
+        setFeedback(error instanceof Error ? error.message : "The live presentation could not be started.", true);
       }
     });
     presentationClock = window.setInterval(() => {
       updateTimerDisplay();
-      if (liveSession && revealMode === "timed" && !slideUpdatePending
+      if (revealMode === "timed" && !slideUpdatePending
         && Date.now() - lastTimedReveal >= Number(revealInterval.value) * 1000
         && revealStep < revealUnitCount(slides[activeSlide], revealMode)) {
         void advance(1);
@@ -6638,13 +7245,22 @@
       if (event.target === dialog) void closeViewer();
     });
     dialog.addEventListener("close", () => {
-      if (ownerPollTimer !== null) window.clearInterval(ownerPollTimer);
+      if (ownerPollTimer !== null) window.clearTimeout(ownerPollTimer);
       if (presentationClock !== null) window.clearInterval(presentationClock);
       if (pointerUpdateTimer !== null) window.clearTimeout(pointerUpdateTimer);
+      if (pointerRenderFrame !== null) window.cancelAnimationFrame(pointerRenderFrame);
+      if (reactionNoticeTimer !== null) window.clearTimeout(reactionNoticeTimer);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      window.removeEventListener("resize", handleViewportResize);
+      stageResizeObserver?.disconnect();
+      if (document.fullscreenElement === fullscreenContent) {
+        void document.exitFullscreen().catch((error) => console.warn("Could not exit presentation fullscreen.", error));
+      }
       dialog.remove();
     }, { once: true });
     renderActiveSlide();
     dialog.showModal();
+    window.requestAnimationFrame(fitSlideToStage);
     dialog.querySelector("[data-presentation-next]").focus();
   }
 
@@ -6681,11 +7297,15 @@
     });
     const outline = ensurePresentationVisuals(data.slides || [])
       .map((slide, index) => presentationSlideMarkup(slide, index, data)).join("");
+    const speakerNotes = (data.slides || [])
+      .map((slide, index) => ({ index, notes: String(slide.presenter_notes || slide.speaker_notes || slide.notes || "").trim() }))
+      .filter((slide) => slide.notes);
     const sections = [
       `<div class="document-section"><h3>Curriculum scope</h3>${weekLabels.length ? `<ul>${weekLabels.map((week) => `<li>${escapeHtml(week)}</li>`).join("")}</ul>` : "<p>No verified weekly scope selected. Add and verify your own curriculum references.</p>"}</div>`,
       `<div class="document-section"><h3>Learning outcomes</h3><ul>${(data.learning_outcomes || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`,
       `<div class="document-section"><h3>Learning indicators</h3><ul>${(data.learning_indicators || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><p>Source-recorded targets are included where available; any additional suggestions are teacher drafts and are not represented as official curriculum wording.</p></div>`,
-      `<div class="document-section"><h3>Presentation preview · ${escapeHtml(templateLabels[data.template] || templateLabels.lesson)}</h3><p>PowerPoint design: ${escapeHtml(visualThemeLabels[data.visual_theme] || visualThemeLabels.modern)}. Every slide includes a visual: charts, tables, graphs and concept diagrams are previewed below and exported as editable PowerPoint elements.</p><div class="presentation-preview-grid">${outline}</div></div>`
+      `<div class="document-section"><h3>Presentation preview · ${escapeHtml(templateLabels[data.template] || templateLabels.lesson)}</h3><p>PowerPoint design: ${escapeHtml(visualThemeLabels[data.visual_theme] || visualThemeLabels.modern)}. Every slide includes a visual: charts, tables, graphs and concept diagrams are previewed below and exported as editable PowerPoint elements.</p><div class="presentation-preview-grid">${outline}</div></div>`,
+      ...(speakerNotes.length ? [`<div class="document-section"><h3>Teacher lecture notes · private</h3><ol>${speakerNotes.map(({ index, notes }) => `<li><strong>Slide ${index + 1}:</strong> ${escapeHtml(notes)}</li>`).join("")}</ol><p>These notes are for the teacher and are not shared on student presentation screens.</p></div>`] : [])
     ];
     return documentFrame(
       data.title,
@@ -6716,6 +7336,7 @@
     slidesForm.elements.namedItem("outcomes").value = outcomes.join("\n");
     slidesForm.elements.namedItem("indicators").value = indicators.join("\n");
     slidesForm.elements.namedItem("points").value = points.join("\n");
+    slidesForm.elements.namedItem("lectureNotes").value = savedLines(savedData.lecture_notes).join("\n");
     slidesForm.elements.namedItem("visualData").value = savedData.visual_data || savedData.presentation_visual_data || "";
     slidesForm.dataset.editingId = String(doc.id);
     slidesForm.querySelector('[type="submit"]').textContent = "Save presentation";
@@ -6739,6 +7360,139 @@
     planningDialogs.slides.showModal();
   }
 
+  const slidesHistoryDialog = document.getElementById("slides-history-dialog");
+  const slidesHistoryList = slidesHistoryDialog.querySelector("[data-slides-history-list]");
+  const slidesHistoryDetail = slidesHistoryDialog.querySelector("[data-slides-history-detail]");
+  const appendHistorySection = (container, heading, entries) => {
+    const section = document.createElement("section");
+    section.className = "slides-history-section";
+    const title = document.createElement("h4");
+    title.textContent = heading;
+    section.append(title);
+    if (!entries.length) {
+      const empty = document.createElement("p");
+      empty.className = "field-help";
+      empty.textContent = "No entries recorded.";
+      section.append(empty);
+    } else {
+      const list = document.createElement("ul");
+      entries.forEach((entry) => {
+        const item = document.createElement("li");
+        item.textContent = entry;
+        list.append(item);
+      });
+      section.append(list);
+    }
+    container.append(section);
+  };
+  async function loadPresentationHistory() {
+    slidesHistoryList.replaceChildren();
+    slidesHistoryDetail.replaceChildren();
+    const loading = document.createElement("p");
+    loading.className = "field-help";
+    loading.textContent = "Loading past presentations…";
+    slidesHistoryList.append(loading);
+    try {
+      const result = await workspaceRequest("/api/teacher/presentation-simulations", "GET", null, { silent: true });
+      slidesHistoryList.replaceChildren();
+      const sessions = Array.isArray(result.sessions) ? result.sessions : [];
+      if (!sessions.length) {
+        const empty = document.createElement("p");
+        empty.className = "field-help";
+        empty.textContent = "No live presentation sessions have been saved yet.";
+        slidesHistoryList.append(empty);
+        return;
+      }
+      sessions.forEach((session) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "slides-history-entry";
+        button.dataset.simulationId = String(session.id);
+        const title = document.createElement("strong");
+        title.textContent = session.title;
+        const date = document.createElement("small");
+        date.textContent = `${session.subject || "Presentation"} · ${new Intl.DateTimeFormat("en-GH", {
+          dateStyle: "medium",
+          timeStyle: "short"
+        }).format(new Date(session.ended_at || session.created_at))}`;
+        const summary = document.createElement("small");
+        summary.textContent = `${session.participant_count} students · ${session.poll_responses} poll answers · ${session.question_count} questions`;
+        button.append(title, date, summary);
+        button.addEventListener("click", () => void showPresentationHistory(session, button));
+        slidesHistoryList.append(button);
+      });
+    } catch (error) {
+      slidesHistoryList.replaceChildren();
+      const failure = document.createElement("p");
+      failure.className = "field-help";
+      failure.textContent = error instanceof Error ? error.message : "Presentation history could not be loaded.";
+      slidesHistoryList.append(failure);
+    }
+  }
+  async function showPresentationHistory(session, selectedButton) {
+    slidesHistoryList.querySelectorAll(".slides-history-entry").forEach((button) => {
+      button.setAttribute("aria-current", String(button === selectedButton));
+    });
+    slidesHistoryDetail.replaceChildren();
+    const loading = document.createElement("p");
+    loading.className = "field-help";
+    loading.textContent = "Loading session details…";
+    slidesHistoryDetail.append(loading);
+    try {
+      const history = await workspaceRequest(
+        `/api/teacher/presentation-simulations/${encodeURIComponent(session.id)}/history`,
+        "GET",
+        null,
+        { silent: true }
+      );
+      slidesHistoryDetail.replaceChildren();
+      const title = document.createElement("h3");
+      title.textContent = history.title;
+      const status = document.createElement("div");
+      status.className = "slides-history-status";
+      [
+        history.status === "ended" ? "Ended" : "In progress",
+        `${(history.presentation?.slides || []).length} slides`,
+        `${history.polls.length} polls`,
+        `${history.pace_responses.length} pace responses`
+      ].forEach((label) => {
+        const tag = document.createElement("span");
+        tag.textContent = label;
+        status.append(tag);
+      });
+      slidesHistoryDetail.append(title, status);
+      const slides = (history.presentation?.slides || []).map((slide, index) =>
+        `Slide ${index + 1}: ${slide.title || "Untitled"}${(slide.key_points || []).length ? ` — ${slide.key_points.join("; ")}` : ""}${slide.presenter_notes ? ` · Lecture notes: ${slide.presenter_notes}` : ""}`
+      );
+      appendHistorySection(slidesHistoryDetail, "Presentation & lecture notes", slides);
+      const polls = history.polls.map((poll) => {
+        const options = (poll.options || []).map((option, index) => {
+          const names = poll.responses.filter((response) => response.answer_index === index)
+            .map((response) => response.participant_name);
+          return `${option}: ${names.length ? names.join(", ") : "No responses"}`;
+        });
+        return `${poll.question} — ${options.join(" · ")}`;
+      });
+      appendHistorySection(slidesHistoryDetail, "Polls & responses", polls);
+      const paceLabels = { understood: "Understood", confused: "Confused", slower: "Slower", faster: "Faster" };
+      appendHistorySection(slidesHistoryDetail, "Pace responses",
+        history.pace_responses.map((response) => `${response.participant_name}: ${paceLabels[response.reaction] || response.reaction}`));
+      appendHistorySection(slidesHistoryDetail, "Student questions & teacher replies",
+        history.questions.map((question) => `${question.participant_name}: ${question.question}${question.teacher_feedback ? ` — Teacher: ${question.teacher_feedback}` : " — No reply recorded"}`));
+    } catch (error) {
+      slidesHistoryDetail.replaceChildren();
+      const failure = document.createElement("p");
+      failure.className = "field-help";
+      failure.textContent = error instanceof Error ? error.message : "Presentation details could not be loaded.";
+      slidesHistoryDetail.append(failure);
+    }
+  }
+  document.getElementById("slides-history-button").addEventListener("click", () => {
+    slidesHistoryDialog.showModal();
+    void loadPresentationHistory();
+  });
+  slidesHistoryDialog.querySelector("[data-close-slides-history]").addEventListener("click", () => slidesHistoryDialog.close());
+
   slidesForm.elements.namedItem("year").addEventListener("change", loadSlideWeeks);
   slidesForm.elements.namedItem("subject").addEventListener("change", loadSlideWeeks);
   document.getElementById("slides-reload-weeks").addEventListener("click", loadSlideWeeks);
@@ -6751,7 +7505,7 @@
     slidesWeekList.replaceChildren();
     slidesWeeklyLessons = [];
     slidesCurriculumStatus.textContent = "Choose the SHS year and subject to find curriculum weeks.";
-    if (profile.primary_subject && Array.from(slidesForm.elements.namedItem("subject").options).some((option) => option.value === profile.primary_subject)) {
+    if (profile.primary_subject) {
       slidesForm.elements.namedItem("subject").value = profile.primary_subject;
     }
     if (slidesForm.elements.namedItem("subject").value && slidesForm.elements.namedItem("year").value) loadSlideWeeks();
@@ -7426,6 +8180,7 @@
       }
       const [areas, subjectGroups] = await Promise.all([areasResponse.json(), subjectsResponse.json()]);
       const lessonSubjects = [...new Set(Object.values(subjectGroups).flat())].sort((left, right) => left.localeCompare(right));
+      subjectList.replaceChildren(...lessonSubjects.map((subject) => new Option(subject, subject)));
       lessonSubjectOptions.replaceChildren(...lessonSubjects.map((subject) => new Option(subject, subject)));
       if (profile.primary_subject && lessonSubjects.includes(profile.primary_subject)) {
         lessonSubjectSelect.value = profile.primary_subject;
@@ -7435,11 +8190,8 @@
       if (profile.primary_subject && lessonSubjects.includes(profile.primary_subject)) {
         schemeSubjectSelect.value = profile.primary_subject;
       }
-      const slidesSubjectSelect = slidesForm.elements.namedItem("subject");
-      slidesSubjectSelect.replaceChildren(new Option("Choose a subject", ""));
-      lessonSubjects.forEach((subject) => slidesSubjectSelect.add(new Option(subject, subject)));
       if (profile.primary_subject && lessonSubjects.includes(profile.primary_subject)) {
-        slidesSubjectSelect.value = profile.primary_subject;
+        slidesForm.elements.namedItem("subject").value = profile.primary_subject;
       }
       const academicYearSelect = lessonForm.elements.namedItem("academicYear");
       const currentAcademicYear = new Date().getFullYear();

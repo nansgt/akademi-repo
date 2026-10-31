@@ -78,7 +78,7 @@ declare(strict_types=1);
             <label class="auth-field"><span>Connection security</span><select name="encryption" required><option value="tls">STARTTLS</option><option value="ssl">SSL/TLS</option><option value="none">None</option></select></label>
           </div>
           <label class="auth-field"><span>SMTP username</span><input name="username" maxlength="255" autocomplete="username"></label>
-          <label class="auth-field"><span>SMTP password <small id="mail-password-status">Not configured</small></span><input name="password" type="password" maxlength="512" autocomplete="new-password" placeholder="Blank keeps the current password"></label>
+          <label class="auth-field"><span>SMTP password <small id="mail-password-status">Not configured</small></span><input name="password" type="password" maxlength="512" autocomplete="new-password" placeholder="Blank keeps the current password if it is readable"></label>
           <label class="auth-field"><span>Sender email address</span><input name="from_address" type="email" maxlength="254" autocomplete="email" required></label>
           <label class="auth-field"><span>Sender name</span><input name="from_name" maxlength="120" required></label>
           <button class="auth-submit" type="submit">Save email settings</button>
@@ -145,10 +145,10 @@ declare(strict_types=1);
   </div>
   <script src="<?= e(app_url('assets/theme.js?v=2')) ?>" defer></script>
   <script src="<?= e(app_url('assets/notifications.js?v=20')) ?>" defer></script>
-  <script src="<?= e(app_url('assets/progress.js?v=5')) ?>" defer></script>
+  <script src="<?= e(app_url('assets/progress.js?v=6')) ?>" defer></script>
   <script src="<?= e(app_url('assets/auth.js?v=22')) ?>" defer></script>
   <script src="<?= e(app_url('assets/admin-shell.js?v=1')) ?>" defer></script>
-  <script src="<?= e(app_url('assets/admin-ai.js?v=25')) ?>" defer></script>
+  <script src="<?= e(app_url('assets/admin-ai.js?v=26')) ?>" defer></script>
   <script src="<?= e(app_url('assets/ai-assistant.js?v=2')) ?>" defer></script>
 </body>
 </html>

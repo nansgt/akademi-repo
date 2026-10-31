@@ -2,10 +2,16 @@ services:
   app:
     build: .
     container_name: akademi_app
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - install -d -o www-data -g www-data -m 700 /var/lib/akademi-storage /var/lib/akademi-storage/sessions /var/lib/akademi-storage/logs /var/lib/akademi-storage/curriculum /var/lib/akademi-storage/curriculum/uploads /var/lib/akademi-storage/curriculum/upload-staging && exec apache2-foreground
     ports:
       - "8000:80"
     volumes:
       - .:/var/www/html
+      - ./docker-php.ini:/usr/local/etc/php/conf.d/zz-akademi.ini:ro
       - akademi_vendor:/var/www/html/vendor
       - akademi_storage:/var/lib/akademi-storage
     environment:
