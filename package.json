@@ -1,0 +1,12 @@
+{
+  "name": "akademi-static-assets",
+  "private": true,
+  "scripts": {
+    "build:pdf-assets": "node scripts/copy-pdfjs-assets.cjs",
+    "build:docx-assets": "node scripts/copy-docx-assets.cjs"
+  },
+  "dependencies": {
+    "docx-preview": "0.4.1",
+    "pdfjs-dist": "4.10.38"
+  }
+}

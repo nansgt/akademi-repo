@@ -1,0 +1,44 @@
+services:
+  app:
+    build: .
+    container_name: akademi_app
+    ports:
+      - "8000:80"
+    volumes:
+      - .:/var/www/html
+      - akademi_vendor:/var/www/html/vendor
+      - akademi_storage:/var/lib/akademi-storage
+    environment:
+      AKADEMI_STORAGE: /var/lib/akademi-storage
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      APP_URL: ${APP_URL}
+      APP_KEY: ${APP_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11.4
+    container_name: akademi_db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_DATABASE}
+      MARIADB_USER: ${DB_USERNAME}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - akademi_database:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  akademi_database:
+  akademi_storage:
+  akademi_vendor:

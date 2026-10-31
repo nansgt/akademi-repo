@@ -1,0 +1,357 @@
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  border: 1px solid var(--line, #e1e8e1);
+  border-radius: 8px;
+  background: var(--paper, #fff);
+  color: var(--ink, #28372e);
+  cursor: pointer;
+}
+.theme-toggle svg { width: 18px; height: 18px; fill: currentColor; }
+.theme-toggle:focus-visible { outline: 3px solid var(--brand-secondary, #c69b3c); outline-offset: 2px; }
+.theme-toggle.floating { position: fixed; z-index: 1000; top: 18px; right: 18px; box-shadow: 0 4px 16px #15271e20; }
+.button-primary { background: var(--brand-primary); color: var(--brand-primary-contrast, #fff); }
+.auth-submit { background: var(--brand-primary); color: var(--brand-primary-contrast, #fff); }
+.auth-mark { background: var(--brand-primary); color: var(--brand-primary-contrast, #fff); }
+.brand-mark { background: var(--brand-primary); color: var(--brand-primary-contrast, #fff); }
+.auth-brand strong,
+.auth-link,
+.preview-button,
+.source-link,
+.text-button,
+.admin-nav a,
+.admin-content a,
+.settings-page-links a,
+.active .nav-icon,
+.row-arrow,
+.settings-tab.active { color: var(--brand-primary); }
+.settings-tab.active { border-color: var(--brand-primary); }
+.gold { background: color-mix(in srgb, var(--brand-secondary) 20%, white); color: var(--brand-primary); }
+.notice-amber .notice-symbol { background: color-mix(in srgb, var(--brand-secondary) 25%, white); color: var(--brand-primary); }
+.akademi-alert-actions button:last-child { border-color: var(--brand-primary); background: var(--brand-primary); color: var(--brand-primary-contrast, #fff); }
+.brand-color-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.brand-preview-secondary { color: var(--brand-secondary-contrast, #111); }
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e7ece9;
+  --muted: #a8b4ad;
+  --line: #35423a;
+  --paper: #1c2620;
+  --canvas: #121915;
+  --sage: #263b2e;
+  --gold: #403a27;
+  --blue: #26343b;
+  --lavender: #342d3d;
+  background: var(--canvas);
+  color: var(--ink);
+}
+html[data-theme="dark"] body,
+html[data-theme="dark"] .auth-shell,
+html[data-theme="dark"] .admin-shell,
+html[data-theme="dark"] .app-shell,
+html[data-theme="dark"] .main-area { background-color: var(--canvas); color: var(--ink); }
+html[data-theme="dark"] .sidebar,
+html[data-theme="dark"] .topbar,
+html[data-theme="dark"] .auth-card,
+html[data-theme="dark"] .settings-panel,
+html[data-theme="dark"] .admin-header,
+html[data-theme="dark"] .stat-card,
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] .form-card,
+html[data-theme="dark"] .credit-summary,
+html[data-theme="dark"] .curriculum-card,
+html[data-theme="dark"] .curriculum-upload-form,
+html[data-theme="dark"] .upload-file-card,
+html[data-theme="dark"] .output-card,
+html[data-theme="dark"] .schedule-day,
+html[data-theme="dark"] .document-row,
+html[data-theme="dark"] .source-callout,
+html[data-theme="dark"] .resource-card,
+html[data-theme="dark"] .akademi-alert-toast,
+html[data-theme="dark"] .akademi-alert-dialog {
+  border-color: var(--line);
+  background-color: var(--paper);
+  color: var(--ink);
+}
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] .breadcrumb strong,
+html[data-theme="dark"] .auth-brand strong,
+html[data-theme="dark"] .settings-card h2,
+html[data-theme="dark"] .settings-card h3,
+html[data-theme="dark"] .stat-value,
+html[data-theme="dark"] .resource-card strong,
+html[data-theme="dark"] .akademi-alert-dialog h2 { color: var(--ink); }
+html[data-theme="dark"] .auth-lead,
+html[data-theme="dark"] .upload-heading p,
+html[data-theme="dark"] .upload-result,
+html[data-theme="dark"] .lead,
+html[data-theme="dark"] .notice-copy p,
+html[data-theme="dark"] .source-callout p,
+html[data-theme="dark"] .auth-hint,
+html[data-theme="dark"] .auth-kicker,
+html[data-theme="dark"] .auth-field,
+html[data-theme="dark"] .eyebrow,
+html[data-theme="dark"] .nav-label,
+html[data-theme="dark"] .auth-brand small,
+html[data-theme="dark"] .auth-field small,
+html[data-theme="dark"] .akademi-alert-copy p,
+html[data-theme="dark"] .akademi-alert-dialog p { color: #aab6af; }
+html[data-theme="dark"] .field input,
+html[data-theme="dark"] .field textarea,
+html[data-theme="dark"] .field select,
+html[data-theme="dark"] .document-filter select,
+html[data-theme="dark"] .auth-field input,
+html[data-theme="dark"] .auth-field select,
+html[data-theme="dark"] .review-fields textarea,
+html[data-theme="dark"] .preview-chunk textarea {
+  border-color: var(--line);
+  background-color: #151e19;
+  color: var(--ink);
+}
+html[data-theme="dark"] .button-secondary,
+html[data-theme="dark"] .button-quiet,
+html[data-theme="dark"] .auth-secondary,
+html[data-theme="dark"] .icon-button,
+html[data-theme="dark"] .small-button,
+html[data-theme="dark"] .curriculum-pagination button,
+html[data-theme="dark"] .preview-chunk .review-actions button,
+html[data-theme="dark"] .akademi-alert-actions button {
+  border-color: var(--line);
+  background-color: #26322b;
+  color: #dce5df;
+}
+html[data-theme="dark"] .document-actions-menu > summary {
+  border-color: var(--line);
+  background-color: #26322b;
+  color: #dce5df;
+}
+html[data-theme="dark"] .document-actions-popover button {
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--ink);
+}
+html[data-theme="dark"] .document-actions-popover button:hover {
+  background-color: #26322b;
+  color: #dce5df;
+}
+html[data-theme="dark"] .document-actions-popover .document-action-delete { color: #f0a79a; }
+html[data-theme="dark"] .document-actions-popover .document-action-delete:hover {
+  background-color: #432c28;
+  color: #f0b9a9;
+}
+html[data-theme="dark"] .settings-tabs,
+html[data-theme="dark"] .brand-preview,
+html[data-theme="dark"] .sidebar-credit,
+html[data-theme="dark"] .output-heading,
+html[data-theme="dark"] .curriculum-preview,
+html[data-theme="dark"] .upload-text-preview,
+html[data-theme="dark"] .ai-output-json,
+html[data-theme="dark"] .search-box {
+  border-color: var(--line);
+  background-color: #17211b;
+  color: var(--ink);
+}
+html[data-theme="dark"] .upload-text-preview { background: #111a15; }
+html[data-theme="dark"] .curriculum-filters {
+  border-color: var(--line);
+  background-color: var(--paper);
+  color: var(--ink);
+}
+html[data-theme="dark"] .curriculum-filters .auth-field,
+html[data-theme="dark"] .curriculum-filters .auth-field > span {
+  color: var(--ink);
+}
+html[data-theme="dark"] .curriculum-filters input,
+html[data-theme="dark"] .curriculum-filters select {
+  border-color: var(--line);
+  background-color: #151e19;
+  color: var(--ink);
+}
+html[data-theme="dark"] .preview-text,
+html[data-theme="dark"] .preview-chunk p,
+html[data-theme="dark"] .curriculum-preview > p,
+html[data-theme="dark"] .upload-preview-heading { color: #c5d0c8; }
+html[data-theme="dark"] .preview-text h4 { color: #b9d9c3; }
+html[data-theme="dark"] .resource-details > summary { color: #c4d0c7; }
+html[data-theme="dark"] .settings-tab { color: #aebbb2; }
+html[data-theme="dark"] .settings-tab:hover,
+html[data-theme="dark"] .settings-tab.active { background: #2a3930; color: #f0f5f1; }
+html[data-theme="dark"] .settings-panel { background-color: var(--paper); }
+html[data-theme="dark"] .profile-link { border-color: var(--line); background: var(--paper); color: var(--ink); }
+html[data-theme="dark"] .offline-note,
+html[data-theme="dark"] .tool-row { border-color: var(--line); }
+html[data-theme="dark"] .nav-item { color: #adb9b1; }
+html[data-theme="dark"] .nav-item:hover,
+html[data-theme="dark"] .nav-item.active { background: #26372c; color: #eef4ef; }
+html[data-theme="dark"] .auth-oauth-btn { border-color: var(--line); color: var(--ink); }
+html[data-theme="dark"] .resource-card > span:not(.resource-kicker):not(.resource-arrow),
+html[data-theme="dark"] .preview-chunk p,
+html[data-theme="dark"] .ai-citations { color: #aeb9b2; }
+html[data-theme="dark"] .preview-chunk { border-color: var(--line); }
+html[data-theme="dark"] .akademi-alert-close { color: #c2cdc5; }
+html[data-theme="dark"] .akademi-alert-actions button:last-child { border-color: var(--brand-primary); background: var(--brand-primary); }
+html[data-theme="dark"] .brand-preview > strong { color: #b9c4bd; }
+html[data-theme="dark"] .auth-link,
+html[data-theme="dark"] .preview-button,
+html[data-theme="dark"] .source-link,
+html[data-theme="dark"] .text-button,
+html[data-theme="dark"] .admin-nav a,
+html[data-theme="dark"] .admin-content a,
+html[data-theme="dark"] .active .nav-icon,
+html[data-theme="dark"] .row-arrow,
+html[data-theme="dark"] .settings-page-links .auth-link {
+  color: color-mix(in srgb, var(--brand-primary) 45%, white);
+}
+html[data-theme="dark"] .gold { background: color-mix(in srgb, var(--brand-secondary) 28%, #1c2620); color: #e7ece9; }
+html[data-theme="dark"] .assessment-origin-notice,
+html[data-theme="dark"] .notice-curriculum,
+html[data-theme="dark"] .notice-soft { border-color: var(--line); background: #223229; color: #dce6df; }
+html[data-theme="dark"] .notice-amber,
+html[data-theme="dark"] .output-warning { border-color: #51472d; background: #342f21; color: #e6d8ad; }
+html[data-theme="dark"] .auth-alert { border-color: #574039; background: #33251f; color: #f0bfac; }
+html[data-theme="dark"] .auth-alert.success { border-color: #35513b; background: #203529; color: #c5e2ca; }
+html[data-theme="dark"] .review-badge { background: #303a33; color: #c2cdc5; }
+html[data-theme="dark"] .review-verified { background: #233b2a; color: #b8dfbf; }
+html[data-theme="dark"] .review-rejected { background: #432c28; color: #f0b9a9; }
+html[data-theme="dark"] .curriculum-empty { border-color: var(--line); color: #bdc8c0; }
+html[data-theme="dark"] .output-card,
+html[data-theme="dark"] .saved-document-dialog .output-card {
+  border-color: var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+html[data-theme="dark"] .document-title-block { border-color: var(--line); }
+html[data-theme="dark"] .assessment-cover-page {
+  border-color: var(--line);
+  background: #18231d;
+  color: var(--ink);
+}
+html[data-theme="dark"] .assessment-cover-page h1 { color: #e7ece9; }
+html[data-theme="dark"] .assessment-cover-kicker { color: color-mix(in srgb, var(--brand-secondary, #c69b3c) 55%, #f5e6b8); }
+html[data-theme="dark"] .assessment-cover-meta > div {
+  border-color: #3a4a40;
+  background: #202d25;
+}
+html[data-theme="dark"] .assessment-cover-meta small { color: #aab8ae; }
+html[data-theme="dark"] .assessment-cover-meta strong { color: #e1e9e3; }
+html[data-theme="dark"] .assessment-cover-prepared {
+  border-color: #3a4a40;
+  background: #202d25;
+}
+html[data-theme="dark"] .assessment-cover-prepared span,
+html[data-theme="dark"] .assessment-cover-note { color: #aab6af; }
+html[data-theme="dark"] .assessment-cover-prepared strong { color: #b9d9c3; }
+html[data-theme="dark"] .assessment-cover-prepared small { color: #c5d0c8; }
+html[data-theme="dark"] .document-title-block p,
+html[data-theme="dark"] .document-section p,
+html[data-theme="dark"] .document-section li,
+html[data-theme="dark"] .lesson-phase p { color: #b8c4bc; }
+html[data-theme="dark"] .document-section h3,
+html[data-theme="dark"] .lesson-phase strong { color: #dce8df; }
+html[data-theme="dark"] .document-meta .meta-box {
+  border-color: #3a4a40;
+  background: #202d25;
+  color: var(--ink);
+}
+html[data-theme="dark"] .meta-box small { color: #aab8ae; }
+html[data-theme="dark"] .meta-box strong { color: #e1e9e3; }
+html[data-theme="dark"] .lesson-phase { border-color: #39483f; }
+html[data-theme="dark"] .phase-time { color: #a9d5b4; }
+html[data-theme="dark"] .assessment-question {
+  border-color: #3a4a40;
+  background: #1e2922;
+  color: var(--ink);
+}
+html[data-theme="dark"] .assessment-question-heading { color: #e1e9e3; }
+html[data-theme="dark"] .assessment-visual-wrap {
+  border-color: #3a4a40;
+  background: #18221c;
+}
+html[data-theme="dark"] .assessment-graph .graph-grid { stroke: #3a4a40; }
+html[data-theme="dark"] .assessment-graph .graph-axis,
+html[data-theme="dark"] .assessment-chart .graph-axis { stroke: #9aab9f; }
+html[data-theme="dark"] .assessment-graph .graph-title,
+html[data-theme="dark"] .assessment-chart .graph-title,
+html[data-theme="dark"] .assessment-geometry .graph-title { fill: #e1e9e3; }
+html[data-theme="dark"] .assessment-graph .graph-tick,
+html[data-theme="dark"] .assessment-chart .graph-tick,
+html[data-theme="dark"] .assessment-geometry .geometry-label,
+html[data-theme="dark"] .assessment-graph .graph-label { fill: #bfcbc2; }
+html[data-theme="dark"] .scheme-table th,
+html[data-theme="dark"] .scheme-fill-table th {
+  border-color: #3b4b41;
+  background: #2b3a31;
+  color: #e3ece5;
+}
+html[data-theme="dark"] .scheme-table td,
+html[data-theme="dark"] .scheme-fill-table td {
+  border-color: #34443a;
+  color: #c5d0c8;
+}
+html[data-theme="dark"] .scheme-table thead tr:first-child th,
+html[data-theme="dark"] .scheme-table th:first-child,
+html[data-theme="dark"] .scheme-table td:first-child {
+  border-color: #3b4b41;
+}
+html[data-theme="dark"] .scheme-fill-table tbody tr:nth-child(even) > td { background: #202b24; }
+html[data-theme="dark"] .scheme-fill-table tbody tr:hover > td { background: #29372e; }
+html[data-theme="dark"] .scheme-fill-table .scheme-week-row[data-week-kind="mid_semester"] > td,
+html[data-theme="dark"] .scheme-table .scheme-week-mid_semester > td { background: #3e3524; color: #f0dfb4; }
+html[data-theme="dark"] .scheme-fill-table .scheme-week-row[data-week-kind="revision"] > td,
+html[data-theme="dark"] .scheme-table .scheme-week-revision > td { background: #263744; color: #c9dfef; }
+html[data-theme="dark"] .scheme-fill-table .scheme-week-row[data-week-kind="end_semester"] > td,
+html[data-theme="dark"] .scheme-table .scheme-week-end_semester > td { background: #402d2c; color: #f0ccca; }
+html[data-theme="dark"] .scheme-fill-table .scheme-week-row[data-week-kind="mid_semester"]:hover > td,
+html[data-theme="dark"] .scheme-table .scheme-week-mid_semester:hover > td { background: #4b402b; }
+html[data-theme="dark"] .scheme-fill-table .scheme-week-row[data-week-kind="revision"]:hover > td,
+html[data-theme="dark"] .scheme-table .scheme-week-revision:hover > td { background: #2e4352; }
+html[data-theme="dark"] .scheme-fill-table .scheme-week-row[data-week-kind="end_semester"]:hover > td,
+html[data-theme="dark"] .scheme-table .scheme-week-end_semester:hover > td { background: #4d3534; }
+html[data-theme="dark"] .scheme-semester-divider th {
+  background: #293a30;
+  color: #d8e9dc;
+}
+html[data-theme="dark"] .scheme-semester-divider th > small,
+html[data-theme="dark"] .scheme-event-legend { color: #b2c0b7; }
+html[data-theme="dark"] .scheme-event-swatch { border-color: #59665d; }
+html[data-theme="dark"] .scheme-event-swatch-mid { background: #3e3524; }
+html[data-theme="dark"] .scheme-event-swatch-revision { background: #263744; }
+html[data-theme="dark"] .scheme-event-swatch-end { background: #402d2c; }
+html[data-theme="dark"] .scheme-fill-table input,
+html[data-theme="dark"] .scheme-fill-table select,
+html[data-theme="dark"] .scheme-fill-table textarea {
+  border-color: #435349;
+  background: #17211b;
+  color: #e1e9e3;
+}
+html[data-theme="dark"] .scheme-fill-table select { color: #d4dfd7; }
+html[data-theme="dark"] .scheme-week-badge {
+  border-color: #42564a;
+  background: #293a30;
+  color: #c8e0ce;
+}
+html[data-theme="dark"] .scheme-signoff { border-color: #3a4a40; }
+html[data-theme="dark"] .scheme-signoff > h3 { color: #d8e9dc; }
+html[data-theme="dark"] .scheme-signoff-card,
+html[data-theme="dark"] .scheme-preview-body .scheme-signoff-card {
+  border-color: #3a4a40;
+  background: #202b24;
+  color: var(--ink);
+}
+html[data-theme="dark"] .scheme-signoff-role,
+html[data-theme="dark"] .scheme-signoff-labels { color: #b2c0b7; }
+html[data-theme="dark"] .scheme-signoff-card > strong { color: #e1e9e3; }
+html[data-theme="dark"] .scheme-signature-line { border-color: #89968d; }
+
+@media (max-width: 560px) {
+  .theme-toggle.floating { top: 12px; right: 12px; }
+}
+@media (max-width: 640px) {
+  .brand-color-grid { grid-template-columns: 1fr; }
+}

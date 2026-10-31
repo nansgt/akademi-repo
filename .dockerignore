@@ -1,0 +1,11 @@
+.git
+.github
+.devcontainer
+.env
+.env.*
+vendor
+node_modules
+storage
+akademi-private-storage
+*.zip
+*.log

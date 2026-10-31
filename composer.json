@@ -1,0 +1,26 @@
+{
+  "name": "akademi/ghana-shs-planner",
+  "description": "Curriculum-grounded planning workspace for Ghanaian SHS educators",
+  "type": "project",
+  "require": {
+    "php": "^8.2",
+    "ext-curl": "*",
+    "ext-mbstring": "*",
+    "ext-openssl": "*",
+    "ext-pdo_mysql": "*",
+    "phpmailer/phpmailer": "^6.10",
+    "smalot/pdfparser": "^2.11"
+  },
+  "autoload": {
+    "psr-4": {
+      "Akademi\\": "app/"
+    }
+  },
+  "config": {
+    "sort-packages": true,
+    "optimize-autoloader": true,
+    "platform": {
+      "php": "8.2.0"
+    }
+  }
+}

@@ -1,0 +1,1711 @@
+{
+    "schema_version":  1,
+    "authority":  "NaCCA, Ministry of Education, Ghana",
+    "curriculum_level":  "SHS 1-3",
+    "generated_at":  "2026-10-18T04:06:45Z",
+    "hierarchy":  [
+                      "strand",
+                      "sub_strand",
+                      "focal_area",
+                      "content_standard",
+                      "learning_indicator",
+                      "exemplar"
+                  ],
+    "import_policy":  "Only transcribe from the official curriculum source_url. Empty arrays mean curriculum content has not been imported; do not infer or generate missing content.",
+    "subjects":  [
+                     {
+                         "id":  "english-language",
+                         "name":  "English Language",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "intervention-english",
+                         "name":  "Intervention English",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "mathematics",
+                         "name":  "Mathematics",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/wp-content/uploads/2025/04/Mathematics-Curriculum.pdf",
+                         "curriculum_status":  "partially_imported",
+                         "years":  {
+                                       "SHS1":  [
+                                                    {
+                                                        "strand_code":  "1",
+                                                        "strand":  "Numbers for Everyday Life",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Real Number System",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Proportional Reasoning",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "2",
+                                                        "strand":  "Algebraic Reasoning",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Applications of Expressions, Equations and Inequalities",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Patterns and Relationships",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "3",
+                                                        "strand":  "Geometry Around Us",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Spatial Sense",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Measurement",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "4",
+                                                        "strand":  "Making Sense of and Using Data",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Statistical Reasoning and Its Application in Real Life",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Probability/Chance",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    }
+                                                ],
+                                       "SHS2":  [
+                                                    {
+                                                        "strand_code":  "1",
+                                                        "strand":  "Numbers for Everyday Life",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Real Number and Numeration System",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Real Number and Numeration System",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "2",
+                                                        "strand":  "Algebraic Reasoning",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Applications of Expressions, Equations and Inequalities",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Patterns and Relations",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "3",
+                                                        "strand":  "Geometry Around Us",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Spatial Sense",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Measurement",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "4",
+                                                        "strand":  "Making Sense of and Using Data",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Statistical Reasoning and Its Application in Real Life",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Probability/Chance",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    }
+                                                ],
+                                       "SHS3":  [
+                                                    {
+                                                        "strand_code":  "1",
+                                                        "strand":  "Numbers for Everyday Life",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Proportional Reasoning",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "2",
+                                                        "strand":  "Algebraic Reasoning",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Patterns and Relationships",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "3",
+                                                        "strand":  "Geometry Around Us",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Spatial Sense",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Measurement",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "4",
+                                                        "strand":  "Making Sense of and Using Data",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Statistical Reasoning and Its Application in Real Life",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Probability/Chance",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    }
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "intervention-mathematics",
+                         "name":  "Intervention Mathematics",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "general-science",
+                         "name":  "General Science",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "integrated-science",
+                         "name":  "Integrated Science",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "social-studies",
+                         "name":  "Social Studies",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "information-communication-technology-ict",
+                         "name":  "Information Communication Technology (ICT)",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "computing",
+                         "name":  "Computing",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "core-physical-education-and-health-peh",
+                         "name":  "Core Physical Education and Health (PEH)",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "elective-physical-education-and-health-peh",
+                         "name":  "Elective Physical Education and Health (PEH)",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "religious-and-moral-education",
+                         "name":  "Religious and Moral Education",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "religious-studies-christian",
+                         "name":  "Religious Studies (Christian)",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "christian-religious-studies",
+                         "name":  "Christian Religious Studies",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "religious-studies-islamic",
+                         "name":  "Religious Studies (Islamic)",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "islamic-religious-studies",
+                         "name":  "Islamic Religious Studies",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "arabic",
+                         "name":  "Arabic",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "french",
+                         "name":  "French",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "spanish",
+                         "name":  "Spanish",
+                         "subject_group":  "core_and_general",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "additional-mathematics",
+                         "name":  "Additional Mathematics",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/wp-content/uploads/2025/04/Additional-Mathematics-Curriculum.pdf",
+                         "curriculum_status":  "partially_imported",
+                         "years":  {
+                                       "SHS1":  [
+                                                    {
+                                                        "strand_code":  "1",
+                                                        "strand":  "Modelling with Algebra",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Number and Algebraic Patterns",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Applications of Algebra",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "2",
+                                                        "strand":  "Geometric Reasoning and Measurement",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Spatial Sense",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Measurement of Triangles",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "3",
+                                                        "strand":  "Calculus",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Principles of Calculus",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Applications of Calculus",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "4",
+                                                        "strand":  "Handling Data",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Organising, Representing and Interpreting Data",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Making Predictions with Data",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    }
+                                                ],
+                                       "SHS2":  [
+                                                    {
+                                                        "strand_code":  "1",
+                                                        "strand":  "Modelling with Algebra",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Application of Algebra",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "2",
+                                                        "strand":  "Geometric Reasoning and Measurement",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Spatial Sense",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Measurement of Triangles",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "3",
+                                                        "strand":  "Calculus",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Principles of Calculus",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Applications of Calculus",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "4",
+                                                        "strand":  "Handling Data",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Organising, Representing and Interpreting Data",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Making Predictions with Data",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    }
+                                                ],
+                                       "SHS3":  [
+                                                    {
+                                                        "strand_code":  "1",
+                                                        "strand":  "Modelling with Algebra",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Applications of Algebra",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "2",
+                                                        "strand":  "Geometric Reasoning and Measurement",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Spatial Reasoning",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Measuring Triangles",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "3",
+                                                        "strand":  "Calculus",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Principle of Calculus",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Application of Calculus",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    },
+                                                    {
+                                                        "strand_code":  "4",
+                                                        "strand":  "Handling Data",
+                                                        "sub_strands":  [
+                                                                            {
+                                                                                "code":  "1",
+                                                                                "name":  "Organising, Representing and Interpreting Data",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            },
+                                                                            {
+                                                                                "code":  "2",
+                                                                                "name":  "Making Predictions with Data",
+                                                                                "focal_areas":  [
+
+                                                                                                ],
+                                                                                "content_standards":  [
+
+                                                                                                      ]
+                                                                            }
+                                                                        ]
+                                                    }
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "agricultural-science",
+                         "name":  "Agricultural Science",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "agriculture",
+                         "name":  "Agriculture",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "applied-technology",
+                         "name":  "Applied Technology",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "aviation-and-aerospace-engineering",
+                         "name":  "Aviation and Aerospace Engineering",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "biology",
+                         "name":  "Biology",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "biomedical-science",
+                         "name":  "Biomedical Science",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "chemistry",
+                         "name":  "Chemistry",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "design-and-communication-technology",
+                         "name":  "Design and Communication Technology",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "engineering",
+                         "name":  "Engineering",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "manufacturing-engineering",
+                         "name":  "Manufacturing Engineering",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "physics",
+                         "name":  "Physics",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "robotics",
+                         "name":  "Robotics",
+                         "subject_group":  "science_and_stem",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "accounting",
+                         "name":  "Accounting",
+                         "subject_group":  "business_and_humanities",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "business-management",
+                         "name":  "Business Management",
+                         "subject_group":  "business_and_humanities",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "economics",
+                         "name":  "Economics",
+                         "subject_group":  "business_and_humanities",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "geography",
+                         "name":  "Geography",
+                         "subject_group":  "business_and_humanities",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "government",
+                         "name":  "Government",
+                         "subject_group":  "business_and_humanities",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "history",
+                         "name":  "History",
+                         "subject_group":  "business_and_humanities",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "literature-in-english",
+                         "name":  "Literature-in-English",
+                         "subject_group":  "business_and_humanities",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "art-and-design-foundation",
+                         "name":  "Art and Design Foundation",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "arts-and-design-studio",
+                         "name":  "Arts and Design Studio",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "automotive-and-metal-technology",
+                         "name":  "Automotive and Metal Technology",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "building-construction-and-wood-technology",
+                         "name":  "Building Construction and Wood Technology",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "clothing-and-textiles",
+                         "name":  "Clothing and Textiles",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "electrical-and-electronic-technology",
+                         "name":  "Electrical and Electronic Technology",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "food-and-nutrition",
+                         "name":  "Food and Nutrition",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "management-in-living",
+                         "name":  "Management in Living",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "music",
+                         "name":  "Music",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "performing-arts",
+                         "name":  "Performing Arts",
+                         "subject_group":  "creative_and_applied",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "ghanaian-language",
+                         "name":  "Ghanaian Language",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "asante-twi",
+                         "name":  "Asante Twi",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "akuapem-twi",
+                         "name":  "Akuapem Twi",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "dangme",
+                         "name":  "Dangme",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "dagaare",
+                         "name":  "Dagaare",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "dagbanli",
+                         "name":  "Dagbanli",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "ewe",
+                         "name":  "Ewe",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "ga",
+                         "name":  "Ga",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "gonja",
+                         "name":  "Gonja",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "gurene",
+                         "name":  "Gurene",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "kasem",
+                         "name":  "Kasem",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "mfantse",
+                         "name":  "Mfantse",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     },
+                     {
+                         "id":  "nzema",
+                         "name":  "Nzema",
+                         "subject_group":  "ghanaian_languages",
+                         "source_url":  "https://nacca.gov.gh/secondary-education-curriculum/",
+                         "curriculum_status":  "awaiting_import",
+                         "years":  {
+                                       "SHS1":  [
+
+                                                ],
+                                       "SHS2":  [
+
+                                                ],
+                                       "SHS3":  [
+
+                                                ]
+                                   }
+                     }
+                 ]
+}

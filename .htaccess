@@ -1,0 +1,24 @@
+Options -Indexes
+RewriteEngine On
+
+# Route the workspace HTML through the PHP application.
+RewriteRule ^index\.html$ index.php [END,QSA]
+
+# Block private application directories.
+RewriteRule ^(app|bin|config|database|docs|scripts|vendor|node_modules)(/|$) - [F,END,NC]
+
+# Block hidden files and directories.
+RewriteRule (^|/)\. - [F,END]
+
+# Protect project and configuration files.
+<FilesMatch "^(composer\.(json|lock)|php\.ini|package(-lock)?\.json|INSTALLATION\.md|README\.md|readMe\.md)$">
+    Require all denied
+</FilesMatch>
+
+# Serve existing public assets normally.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [END]
+
+# Send application routes to the front controller.
+RewriteRule ^ index.php [END,QSA]

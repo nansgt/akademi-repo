@@ -1,0 +1,70 @@
+.presentation-follow-page { min-height: 100vh; background: var(--canvas); color: var(--ink); }
+.presentation-follow-shell { display: grid; grid-template-rows: auto 4px minmax(0, 1fr); min-height: 100vh; }
+.presentation-follow-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px clamp(16px, 4vw, 42px); border-bottom: 1px solid var(--line); background: var(--paper); }
+.presentation-follow-brand { color: var(--forest); font-size: 13px; font-weight: 850; letter-spacing: 1.5px; text-decoration: none; }
+.presentation-follow-header p { margin: 0; color: var(--muted); font-size: 11px; text-align: right; }
+.presentation-follow-main { display: grid; grid-template-rows: minmax(0, 1fr) auto auto auto; gap: 14px; width: min(1120px, calc(100% - 32px)); min-height: 0; margin: auto; padding: clamp(18px, 4vh, 40px) 0; }
+.presentation-follow-stage { display: grid; min-height: 0; place-items: center; }
+.presentation-follow-stage .presentation-slide-preview { width: 100%; min-height: min(68vh, 720px); padding: clamp(24px, 6vw, 72px); font-size: clamp(15px, 2vw, 21px); }
+.presentation-follow-stage .presentation-slide-preview { position: relative; }
+.presentation-follow-stage .presentation-slide-preview h1 { margin: 0 0 24px; font-size: clamp(28px, 5vw, 54px); line-height: 1.12; }
+.presentation-follow-stage .presentation-slide-preview ul { display: grid; gap: 13px; margin: 0; padding-left: 1.2em; }
+.presentation-follow-stage .presentation-slide-preview li { line-height: 1.45; }
+.presentation-follow-stage .presentation-slide-preview > p { font-size: clamp(13px, 1.5vw, 18px); line-height: 1.5; }
+.presentation-follow-stage .presentation-visual { margin-top: 24px; font-size: 14px; }
+.presentation-follow-reveal-progress { margin-top: 20px; color: var(--muted); font-size: 12px; }
+.presentation-follow-stage .presentation-visual { gap: 14px; min-height: 0; padding: clamp(14px, 2.5vw, 28px); overflow: visible; }
+.presentation-follow-stage .presentation-visual > strong { font-size: clamp(16px, 2vw, 22px); }
+.presentation-follow-stage .presentation-visual-table { overflow-x: auto; }
+.presentation-follow-stage .presentation-visual-table table { min-width: min(100%, 520px); font-size: clamp(13px, 1.5vw, 18px); line-height: 1.45; }
+.presentation-follow-stage .presentation-visual-table th,
+.presentation-follow-stage .presentation-visual-table td { max-width: 360px; padding: 10px 12px; overflow-wrap: anywhere; white-space: normal; }
+.presentation-follow-stage .presentation-chart-bars { height: clamp(180px, 30vh, 280px); gap: clamp(8px, 2vw, 24px); padding: 14px 12px 0; }
+.presentation-follow-stage .presentation-chart-column { grid-template-rows: 24px 1fr 34px; }
+.presentation-follow-stage .presentation-chart-column > span { font-size: clamp(12px, 1.4vw, 16px); }
+.presentation-follow-stage .presentation-chart-column > i { width: min(54px, 70%); min-height: 5px; }
+.presentation-follow-stage .presentation-chart-column > small { font-size: clamp(11px, 1.3vw, 15px); text-align: center; }
+.presentation-follow-stage .presentation-chart-unit { font-size: 13px; }
+.presentation-follow-stage .presentation-visual-cards > div { flex-wrap: wrap; gap: 10px; }
+.presentation-follow-stage .presentation-visual-cards > div > span { flex: 1 1 180px; min-height: 72px; padding: 12px; font-size: clamp(13px, 1.5vw, 17px); }
+.presentation-follow-stage .presentation-visual-cards b { font-size: 12px; }
+.presentation-follow-line-chart { display: block; width: min(100%, 820px); height: auto; margin: 0 auto; overflow: visible; }
+.presentation-follow-chart-grid { stroke: color-mix(in srgb, var(--presentation-accent) 15%, transparent); stroke-width: 1; }
+.presentation-follow-chart-axis { stroke: color-mix(in srgb, var(--presentation-accent) 60%, transparent); stroke-width: 2; }
+.presentation-follow-chart-label { fill: currentColor; font-size: 14px; }
+.presentation-follow-chart-line { fill: none; stroke: var(--chart-color); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.presentation-follow-chart-point { fill: var(--chart-color); stroke: var(--paper, #fff); stroke-width: 2; }
+.presentation-follow-chart-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; font-size: 13px; }
+.presentation-follow-chart-legend > span { display: inline-flex; align-items: center; gap: 7px; }
+.presentation-follow-chart-legend i { width: 12px; height: 12px; border-radius: 50%; background: var(--chart-color); }
+.presentation-follow-annotations { position: absolute; z-index: 4; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.presentation-follow-laser { width: 22px; height: 22px; }
+.presentation-follow-poll { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.presentation-follow-poll[hidden], .presentation-follow-reactions[hidden] { display: none; }
+.presentation-follow-poll-question { margin: 0; color: var(--ink); font-size: 16px; }
+.presentation-follow-poll-option { display: flex; align-items: center; gap: 12px; }
+.presentation-follow-poll-choice { min-height: 40px; flex: 1; padding: 8px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--canvas); color: var(--ink); text-align: left; cursor: pointer; }
+.presentation-follow-poll-choice:hover:not(:disabled), .presentation-follow-poll-choice[aria-pressed="true"] { border-color: var(--forest); background: color-mix(in srgb, var(--forest) 10%, var(--paper)); }
+.presentation-follow-poll-choice:disabled { cursor: default; opacity: .8; }
+.presentation-follow-poll-votes { min-width: 62px; color: var(--muted); font-size: 12px; }
+.presentation-follow-poll > p { margin: 0; color: var(--muted); font-size: 12px; }
+.presentation-follow-reactions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.presentation-follow-reaction-label { margin-right: auto; color: var(--muted); font-size: 12px; }
+.presentation-follow-reaction { min-height: 34px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); color: var(--ink); font-size: 11px; cursor: pointer; }
+.presentation-follow-reaction:hover { border-color: var(--forest); }
+.presentation-follow-footer > div { display: flex; align-items: center; gap: 16px; }
+.presentation-follow-fullscreen { padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); cursor: pointer; }
+.presentation-follow-fullscreen:hover { border-color: var(--forest); }
+.presentation-follow-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--muted); font-size: 11px; }
+.presentation-follow-footer strong { color: var(--forest); }
+.presentation-follow-placeholder { margin: auto; padding: 24px; color: var(--muted); font-size: 15px; text-align: center; }
+@media (max-width: 600px) {
+  .presentation-follow-header { align-items: flex-start; }
+  .presentation-follow-header p { max-width: 65%; }
+  .presentation-follow-main { width: calc(100% - 20px); }
+  .presentation-follow-stage .presentation-slide-preview { min-height: 62vh; }
+  .presentation-follow-stage .presentation-visual-table th,
+  .presentation-follow-stage .presentation-visual-table td { padding: 8px; }
+  .presentation-follow-stage .presentation-chart-bars { height: 190px; }
+  .presentation-follow-footer { align-items: flex-start; flex-direction: column; gap: 5px; }
+}
