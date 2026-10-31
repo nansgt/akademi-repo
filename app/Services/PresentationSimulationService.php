@@ -310,7 +310,7 @@ final class PresentationSimulationService
     public function historyDetails(int $userId, int $simulationId): array
     {
         $statement = Connection::get()->prepare(
-            'SELECT id, title, presentation_data, status, active_slide, created_at, updated_at, ended_at
+            'SELECT id, title, presentation_data, status, active_slide, active_poll, created_at, updated_at, ended_at
              FROM presentation_simulations WHERE id = :id AND user_id = :user_id LIMIT 1'
         );
         $statement->execute(['id' => $simulationId, 'user_id' => $userId]);
@@ -340,6 +340,16 @@ final class PresentationSimulationService
                 'updated_at' => self::isoDate($response['updated_at']),
             ], $responses->fetchAll(PDO::FETCH_ASSOC));
             $polls[] = $poll;
+        }
+        $activePoll = $row['active_poll'] === null
+            ? null
+            : json_decode((string)$row['active_poll'], true, 8, JSON_THROW_ON_ERROR);
+        $activePollId = is_array($activePoll) ? (string)($activePoll['id'] ?? '') : '';
+        if ($activePollId !== '' && !in_array($activePollId, array_column($polls, 'poll_id'), true)) {
+            $activePoll['poll_id'] = $activePollId;
+            $activePoll['results'] = $this->pollResults($simulationId, $activePollId);
+            $activePoll['responses'] = $this->pollRespondents($simulationId, $activePollId);
+            $polls[] = $activePoll;
         }
         $paceStatement = Connection::get()->prepare(
             'SELECT participant_name, reaction, updated_at FROM presentation_simulation_interactions
@@ -743,7 +753,8 @@ final class PresentationSimulationService
         ), 0, 12);
         $groupSize = in_array($mode, ['item', 'timed'], true) ? 1 : 2;
         return (int)ceil(count($points) / $groupSize)
-            + (int)!empty($slide['visual'])
+            + (int)ceil(self::visualRevealUnitCount($slide['visual'] ?? null) / $groupSize) * (int)!empty($slide['visual'])
+            + (int)!empty($slide['image'])
             + (int)!empty($slide['visual_suggestion'])
             + (int)!empty($slide['activity']);
     }
@@ -762,17 +773,137 @@ final class PresentationSimulationService
         $visiblePointCount = min(count($points), $step * $groupSize);
         $slide['key_points'] = array_slice($points, 0, $visiblePointCount);
         $remaining = max(0, $step - $pointGroups);
-        foreach (['visual', 'visual_suggestion', 'activity'] as $field) {
+        foreach (['image', 'visual', 'visual_suggestion', 'activity'] as $field) {
             if (empty($slide[$field])) {
                 continue;
             }
-            if ($remaining > 0) {
-                $remaining--;
+            $unitCount = $field === 'visual' ? self::visualRevealUnitCount($slide[$field]) : 1;
+            $unitGroups = (int)ceil($unitCount / $groupSize);
+            if ($remaining >= $unitGroups) {
+                $remaining -= $unitGroups;
+                if ($field === 'visual') {
+                    $slide[$field] = self::revealedVisual($slide[$field], $unitCount);
+                }
+            } elseif ($remaining > 0 && $field === 'visual') {
+                $slide[$field] = self::revealedVisual($slide[$field], min($unitCount, $remaining * $groupSize));
+                $remaining = 0;
             } else {
                 unset($slide[$field]);
+                $remaining = 0;
             }
         }
         return $slide;
+    }
+
+    private static function visualRevealUnitCount(mixed $value): int
+    {
+        if (!is_array($value)) {
+            return 1;
+        }
+        $type = strtolower((string)($value['type'] ?? ''));
+        if ($type === 'table') {
+            $rows = array_slice(array_filter(is_array($value['rows'] ?? null) ? $value['rows'] : [], 'is_array'), 0, 3);
+            return max(1, count($rows));
+        }
+        if (in_array($type, ['bar_chart', 'chart'], true)) {
+            $labels = array_slice(is_array($value['labels'] ?? null) ? $value['labels'] : [], 0, 6);
+            $values = array_slice(is_array($value['values'] ?? null) ? $value['values'] : [], 0, count($labels));
+            return count($labels) === count($values)
+                && !array_filter($values, static fn(mixed $item): bool => !is_numeric($item) || !is_finite((float)$item))
+                ? max(1, count($labels))
+                : 1;
+        }
+        if (in_array($type, ['process', 'timeline', 'cards', 'comparison'], true)) {
+            $field = is_array($value['steps'] ?? null) ? 'steps' : 'items';
+            $items = array_slice(is_array($value[$field] ?? null) ? $value[$field] : [], 0, 5);
+            $items = array_filter($items, static function (mixed $item): bool {
+                if (is_string($item)) {
+                    return trim($item) !== '';
+                }
+                if (!is_array($item)) {
+                    return false;
+                }
+                foreach (['label', 'title', 'details'] as $key) {
+                    if (is_string($item[$key] ?? null) && trim($item[$key]) !== '') {
+                        return true;
+                    }
+                }
+                return false;
+            });
+            return max(1, count($items));
+        }
+        if ($type === 'graph') {
+            $points = array_slice(is_array($value['points'] ?? null) ? $value['points'] : [], 0, 12);
+            $points = array_filter($points, static fn(mixed $point): bool => is_array($point)
+                && count($point) === 2
+                && is_numeric($point[0]) && is_finite((float)$point[0])
+                && is_numeric($point[1]) && is_finite((float)$point[1]));
+            return max(1, count($points));
+        }
+        if ($type === 'line_chart') {
+            $counts = [];
+            foreach (array_slice(is_array($value['series'] ?? null) ? $value['series'] : [], 0, 4) as $series) {
+                if (!is_array($series) || !is_array($series['values'] ?? null)) {
+                    continue;
+                }
+                $values = array_slice($series['values'], 0, 12);
+                $values = array_filter($values, static fn(mixed $item): bool => is_numeric($item) && is_finite((float)$item));
+                $counts[] = count($values);
+            }
+            return max(1, ...$counts);
+        }
+        return 1;
+    }
+
+    private static function revealedVisual(mixed $value, int $visibleCount): mixed
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+        $type = strtolower((string)($value['type'] ?? ''));
+        if ($type === 'table') {
+            $rows = array_slice(array_filter(is_array($value['rows'] ?? null) ? $value['rows'] : [], 'is_array'), 0, 3);
+            $value['rows'] = array_slice($rows, 0, $visibleCount);
+        } elseif (in_array($type, ['bar_chart', 'chart'], true)) {
+            $labels = array_slice(is_array($value['labels'] ?? null) ? $value['labels'] : [], 0, 6);
+            $values = array_slice(is_array($value['values'] ?? null) ? $value['values'] : [], 0, count($labels));
+            $value['labels'] = array_slice($labels, 0, $visibleCount);
+            $value['values'] = array_slice($values, 0, $visibleCount);
+        } elseif (in_array($type, ['process', 'timeline', 'cards', 'comparison'], true)) {
+            $field = is_array($value['steps'] ?? null) ? 'steps' : 'items';
+            $items = array_slice(is_array($value[$field] ?? null) ? $value[$field] : [], 0, 5);
+            $items = array_values(array_filter($items, static function (mixed $item): bool {
+                if (is_string($item)) {
+                    return trim($item) !== '';
+                }
+                if (!is_array($item)) {
+                    return false;
+                }
+                foreach (['label', 'title', 'details'] as $key) {
+                    if (is_string($item[$key] ?? null) && trim($item[$key]) !== '') {
+                        return true;
+                    }
+                }
+                return false;
+            }));
+            $value[$field] = array_slice($items, 0, $visibleCount);
+        } elseif ($type === 'graph') {
+            $points = array_slice(is_array($value['points'] ?? null) ? $value['points'] : [], 0, 12);
+            $points = array_values(array_filter($points, static fn(mixed $point): bool => is_array($point)
+                && count($point) === 2
+                && is_numeric($point[0]) && is_finite((float)$point[0])
+                && is_numeric($point[1]) && is_finite((float)$point[1])));
+            $value['points'] = array_slice($points, 0, $visibleCount);
+        } elseif ($type === 'line_chart' && is_array($value['series'] ?? null)) {
+            $value['series'] = array_map(static function (mixed $series) use ($visibleCount): mixed {
+                if (is_array($series) && is_array($series['values'] ?? null)) {
+                    $values = array_filter(array_slice($series['values'], 0, 12), static fn(mixed $item): bool => is_numeric($item) && is_finite((float)$item));
+                    $series['values'] = array_slice(array_values($values), 0, min(12, $visibleCount));
+                }
+                return $series;
+            }, array_slice($value['series'], 0, 4));
+        }
+        return $value;
     }
 
     private static function validateAnnotations(mixed $value): array

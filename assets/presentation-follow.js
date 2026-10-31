@@ -24,6 +24,7 @@
   let timer = null;
   let countdownTimer = null;
   let lastSlideKey = "";
+  let lastRevealRender = null;
   let lastTimerKey = "";
   let lastPollKey = "";
   let lastReactionKey = "";
@@ -128,7 +129,7 @@
             .filter((point) => Number.isFinite(point[1]))
         }));
     const allPoints = series.flatMap((item) => item.points);
-    if (!series.some((item) => item.points.length > 1)) return null;
+    if (!series.some((item) => item.points.length > 0)) return null;
 
     const width = 720;
     const height = 380;
@@ -177,10 +178,12 @@
     }, Number(xMax.toFixed(2)));
     const colors = ["#247456", "#d0a64a", "#277da1", "#c85845"];
     series.forEach((item, index) => {
-      if (item.points.length < 2) return;
+      if (!item.points.length) return;
       const color = colors[index % colors.length];
-      const coordinates = item.points.map(([x, y]) => `${pointX(x)},${pointY(y)}`).join(" ");
-      add("polyline", { points: coordinates, class: "presentation-follow-chart-line", style: `--chart-color:${color}` });
+      if (item.points.length > 1) {
+        const coordinates = item.points.map(([x, y]) => `${pointX(x)},${pointY(y)}`).join(" ");
+        add("polyline", { points: coordinates, pathLength: 1, class: "presentation-follow-chart-line", style: `--chart-color:${color}` });
+      }
       item.points.forEach(([x, y]) => {
         add("circle", {
           cx: pointX(x), cy: pointY(y), r: 5,
@@ -265,25 +268,29 @@
   function renderPoll(poll) {
     pollPanel.replaceChildren();
     const selected = poll ? ownAnswers.get(poll.id) : undefined;
-    pollPanel.hidden = !poll || selected !== undefined;
-    if (!poll || selected !== undefined) return;
+    pollPanel.hidden = !poll;
+    if (!poll) return;
     pollPanel.append(textElement("h2", poll.question, "presentation-follow-poll-question"));
     const options = Array.isArray(poll.options) ? poll.options : [];
     const results = poll.results || {};
     options.forEach((option, index) => {
       const row = document.createElement("div");
       row.className = "presentation-follow-poll-option";
-      const button = textElement("button", `🗳️ ${String(option)}`, "presentation-follow-poll-choice");
+      const button = document.createElement("button");
+      button.className = "presentation-follow-poll-choice";
       button.type = "button";
       button.disabled = !poll.open || selected !== undefined;
       if (selected === index) button.setAttribute("aria-pressed", "true");
+      button.append(textElement("span", `🗳️ ${String(option)}`, "presentation-follow-poll-label"));
+      if (selected !== undefined || !poll.open) {
+        const votes = Number(results[index] || 0);
+        button.append(textElement("span", String(votes), "presentation-follow-counter"));
+        button.setAttribute("aria-label", `${String(option)}, ${votes} votes`);
+      }
       button.addEventListener("click", () => void submitInteraction({
         type: "poll", poll_id: poll.id, answer_index: index
       }));
       row.append(button);
-      if (selected !== undefined || !poll.open) {
-        row.append(textElement("span", `${Number(results[index] || 0)} votes`, "presentation-follow-poll-votes"));
-      }
       pollPanel.append(row);
     });
     if (!poll.open) pollPanel.append(textElement("p", "This check-in is closed."));
@@ -291,10 +298,21 @@
 
   function renderReactions(counts = {}) {
     reactions.replaceChildren(textElement("span", "How is the pace?", "presentation-follow-reaction-label"));
+    const paceCount = Object.values(counts).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0);
+    const paceCountBadge = paceToggle.querySelector("[data-follow-pace-count]");
+    if (paceCountBadge) {
+      paceCountBadge.textContent = String(paceCount);
+      paceCountBadge.hidden = paceCount === 0;
+      paceToggle.setAttribute("aria-label", `Show pace responses, ${paceCount} total`);
+    }
     Object.entries(reactionNames).forEach(([reaction, label]) => {
-      const button = textElement("button", `${label} · ${Number(counts[reaction] || 0)}`, "presentation-follow-reaction");
+      const total = Number(counts[reaction] || 0);
+      const button = document.createElement("button");
+      button.className = "presentation-follow-reaction";
       button.type = "button";
-      button.setAttribute("aria-label", label);
+      button.append(textElement("span", label, "presentation-follow-reaction-text"));
+      button.append(textElement("span", String(total), "presentation-follow-counter"));
+      button.setAttribute("aria-label", `${label}, ${total} responses`);
       button.setAttribute("aria-pressed", String(ownReactions.get("reaction") === reaction));
       button.addEventListener("click", () => void submitInteraction({ type: "reaction", reaction }));
       reactions.append(button);
@@ -303,7 +321,16 @@
 
   function renderQuestions(questions = []) {
     questionList.replaceChildren();
-    questionCount.textContent = questions.length ? `· ${questions.length}` : "";
+    questionCount.textContent = String(questions.length);
+    questionCount.hidden = questions.length === 0;
+    questionCount.setAttribute("aria-label", `${questions.length} questions sent`);
+    const submitButton = questionForm.querySelector("button[type='submit']");
+    const submitCount = submitButton?.querySelector(".presentation-follow-counter");
+    if (submitCount) {
+      submitCount.textContent = String(questions.length);
+      submitCount.hidden = questions.length === 0;
+      submitButton.setAttribute("aria-label", `Send question, ${questions.length} questions sent`);
+    }
     questions.forEach((question) => {
       const card = document.createElement("article");
       card.className = "presentation-follow-question-item";
@@ -401,6 +428,7 @@
     status.textContent = data.subject
       ? `Following your teacher · ${data.subject}${data.year ? ` · ${data.year}` : ""}`
       : "Following your teacher's presentation";
+    const previousArticle = stage.querySelector(".presentation-slide-preview");
     const theme = themes.has(data.visual_theme) ? data.visual_theme : "modern";
     const template = ["lesson", "inquiry", "worked", "discussion", "project", "revision", "flipped"].includes(data.template)
       ? data.template
@@ -414,6 +442,10 @@
     header.append(slideNumber, metadata);
     article.append(header, textElement("h4", String(slide.title || "Presentation slide")));
     const mode = ["all", "group", "item", "timed"].includes(data.reveal_mode) ? data.reveal_mode : "all";
+    const revealStep = Number(data.reveal_step) || 0;
+    const animateNewReveal = lastRevealRender?.slide === data.active_slide
+      && lastRevealRender.mode === mode
+      && revealStep > lastRevealRender.step;
     const points = Array.isArray(slide.key_points)
       ? slide.key_points.filter((point) => typeof point === "string" && point.trim()).slice(0, 12)
       : [];
@@ -487,6 +519,29 @@
     if (mode !== "all" && Number(data.reveal_total) > 0) {
       article.append(textElement("small", `Content ${Math.min(Number(data.reveal_step) || 0, Number(data.reveal_total))} of ${data.reveal_total}`, "presentation-follow-reveal-progress"));
     }
+    if (animateNewReveal) {
+      const revealSelectors = [
+        "li",
+        ".presentation-slide-image",
+        ".presentation-visual-cards > div > span",
+        ".presentation-visual-table tbody tr",
+        ".presentation-chart-column",
+        ".presentation-follow-chart-point",
+        ".presentation-graph-point"
+      ];
+      revealSelectors.forEach((selector) => {
+        const previousCount = previousArticle?.querySelectorAll(selector).length || 0;
+        Array.from(article.querySelectorAll(selector)).slice(previousCount).forEach((item, index) => {
+          item.classList.add("presentation-item-zoom-in");
+          item.style.setProperty("--reveal-delay", `${index * 70}ms`);
+        });
+      });
+      const previousDetail = previousArticle?.querySelector(":scope > p");
+      if (detail.textContent.trim() && detail.textContent !== previousDetail?.textContent) {
+        detail.classList.add("presentation-item-zoom-in");
+      }
+    }
+    lastRevealRender = { slide: data.active_slide, mode, step: revealStep };
     stage.replaceChildren(article);
     renderPointer(data.pointer);
     requestAnimationFrame(() => fitSlideToStage(article));
@@ -591,11 +646,17 @@
 
   function getParticipantId() {
     const key = `akademi-presentation-participant-${token}`;
-    const cryptoApi = window.crypto;
     const createId = () => {
-      if (typeof cryptoApi.randomUUID === "function") return cryptoApi.randomUUID();
+      const cryptoApi = window.crypto;
+      if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
       const bytes = new Uint8Array(16);
-      cryptoApi.getRandomValues(bytes);
+      if (typeof cryptoApi?.getRandomValues === "function") {
+        cryptoApi.getRandomValues(bytes);
+      } else {
+        for (let index = 0; index < bytes.length; index++) {
+          bytes[index] = Math.floor(Math.random() * 256);
+        }
+      }
       bytes[6] = (bytes[6] & 0x0f) | 0x40;
       bytes[8] = (bytes[8] & 0x3f) | 0x80;
       const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
@@ -611,14 +672,14 @@
       console.warn("A temporary student response identity could not be saved.", error);
       return createId();
     }
+  }
 
-    function storedParticipantName() {
-      try {
-        return window.sessionStorage.getItem(`akademi-presentation-name-${token}`) || "";
-      } catch (error) {
-        console.warn("The student name could not be restored from this browser session.", error);
-        return "";
-      }
+  function storedParticipantName() {
+    try {
+      return window.sessionStorage.getItem(`akademi-presentation-name-${token}`) || "";
+    } catch (error) {
+      console.warn("The student name could not be restored from this browser session.", error);
+      return "";
     }
   }
 
@@ -664,6 +725,7 @@
   });
   questionForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     const question = questionForm.elements.namedItem("question").value.trim();
     if (question) void submitInteraction({ type: "question", question });
   });

@@ -2843,7 +2843,7 @@
           points: item.values.slice(0, 12).map((value, index) => [index, Number(value)]).filter((point) => Number.isFinite(point[1]))
         })) : []);
       const allPoints = series.flatMap((item) => item.points || []);
-      if (allPoints.length < 2) return "";
+      if (allPoints.length < 1) return "";
       const xValues = allPoints.map((point) => point[0]), yValues = allPoints.map((point) => point[1]);
       const xLow = Math.min(...xValues), xRange = Math.max(1, Math.max(...xValues) - xLow);
       const yLow = Math.min(...yValues), yRange = Math.max(1, Math.max(...yValues) - yLow);
@@ -6306,6 +6306,7 @@
           </div>
           <div class="presentation-toolbar-category" aria-label="View">
             <button type="button" class="presentation-icon-button" data-presentation-presenter-view aria-label="Presenter notes" aria-pressed="false" title="Presenter notes"><i class="fa-solid fa-sticky-note"></i><small>Notes</small></button>
+            <button type="button" class="presentation-icon-button" data-presentation-open-history aria-label="Open presentation history" title="Presentation history"><i class="fa-solid fa-clock-rotate-left"></i><small>History</small></button>
             <button type="button" class="presentation-icon-button" data-presentation-fullscreen aria-label="Toggle full screen" title="Full screen"><i class="fa-solid fa-expand"></i><small>Full</small></button>
             <button type="button" class="presentation-icon-button" data-presentation-close aria-label="Exit presentation" title="Exit"><i class="fa-solid fa-xmark"></i><small>Exit</small></button>
           </div>
@@ -6314,16 +6315,16 @@
       <div class="presentation-live-sharing" data-presentation-live-sharing hidden>
         <div class="presentation-live-controls" data-presentation-live-controls></div>
         <section class="presentation-feedback-card presentation-pace-card" data-presentation-pace-summary aria-label="Class pace responses">
-          <h3><i class="fa-solid fa-gauge-high"></i> Class pace</h3>
+          <h3><i class="fa-solid fa-gauge-high"></i> Class pace <span class="presentation-live-count" data-presentation-feedback-count="pace" hidden></span></h3>
           <div class="presentation-feedback-items" data-presentation-pace-items></div>
         </section>
         <span class="presentation-reaction-notice" data-presentation-reaction-notice role="status" aria-live="polite"></span>
         <section class="presentation-feedback-card presentation-poll-live-feedback" data-presentation-poll-live-feedback aria-label="Live poll results" aria-live="polite" hidden>
-          <h3><i class="fa-solid fa-square-poll-vertical"></i> Live poll</h3>
+          <h3><i class="fa-solid fa-square-poll-vertical"></i> Live poll <span class="presentation-live-count" data-presentation-feedback-count="poll" hidden></span></h3>
           <div class="presentation-poll-feedback-content" data-presentation-poll-feedback></div>
         </section>
         <section class="presentation-feedback-card presentation-question-live-feedback" data-presentation-question-live-feedback aria-label="Student questions" hidden>
-          <h3><i class="fa-solid fa-circle-question"></i> Student questions</h3>
+          <h3><i class="fa-solid fa-circle-question"></i> Student questions <span class="presentation-live-count" data-presentation-feedback-count="questions" hidden></span></h3>
           <div class="presentation-question-feedback-content" data-presentation-question-feedback></div>
         </section>
       </div>
@@ -6359,7 +6360,10 @@
     const questionFeedback = dialog.querySelector("[data-presentation-question-feedback]");
     const pollOptionsContainer = dialog.querySelector("[data-presentation-poll-options]");
     const feedback = dialog.querySelector("[data-presentation-feedback]");
-    const copyFeedback = dialog.querySelector("[data-presentation-copy-feedback]");
+    const historyButton = dialog.querySelector("[data-presentation-open-history]");
+    historyButton.addEventListener("click", () => {
+      openPresentationHistory(fullscreenContent);
+    });
     const paceSummary = dialog.querySelector("[data-presentation-pace-summary]");
     const paceItems = dialog.querySelector("[data-presentation-pace-items]");
     const reactionNotice = dialog.querySelector("[data-presentation-reaction-notice]");
@@ -6370,6 +6374,7 @@
     let slideUpdatePending = false;
     let revealMode = "all";
     let revealStep = 0;
+    let lastRevealRender = null;
     let liveState = null;
     let annotations = [];
     let pointerState = null;
@@ -6393,13 +6398,104 @@
     let lastPollSummary = "";
     let lastQuestionSummary = "";
     const feedbackPanels = { pace: true, poll: true, questions: false };
+    const feedbackVisibilityButtons = {};
+    let activePollId = "";
+    let currentPollResponses = 0;
+    const updateFeedbackCount = (key, count) => {
+      const total = Math.max(0, Number(count) || 0);
+      const badge = dialog.querySelector(`[data-presentation-feedback-count="${key}"]`);
+      if (badge) {
+        badge.textContent = total > 99 ? "99+" : String(total);
+        badge.hidden = total === 0;
+      }
+      const button = feedbackVisibilityButtons[key];
+      if (!button) return;
+      let buttonBadge = button.querySelector(".presentation-feedback-count");
+      if (!buttonBadge) {
+        buttonBadge = document.createElement("span");
+        buttonBadge.className = "presentation-feedback-count";
+        button.append(buttonBadge);
+      }
+      buttonBadge.textContent = total > 99 ? "99+" : String(total);
+      buttonBadge.hidden = total === 0;
+      button.setAttribute("aria-label", `${feedbackPanels[key] ? "Hide" : "Show"} ${key === "questions" ? "Q&A" : key === "pace" ? "Pace" : "Poll"} feedback, ${total}`);
+    };
     let pointerRenderFrame = null;
 
+    const visualRevealUnitCount = (visual) => {
+      if (!visual || typeof visual !== "object" || Array.isArray(visual)) return 1;
+      const type = String(visual.type || "").toLowerCase();
+      if (type === "table") {
+        return Math.max(1, (Array.isArray(visual.rows) ? visual.rows : []).filter(Array.isArray).slice(0, 3).length);
+      }
+      if (type === "bar_chart" || type === "chart") {
+        const labels = Array.isArray(visual.labels) ? visual.labels.slice(0, 6) : [];
+        const values = Array.isArray(visual.values) ? visual.values.slice(0, labels.length).map(Number) : [];
+        return values.length === labels.length && values.every(Number.isFinite) ? Math.max(1, labels.length) : 1;
+      }
+      if (["process", "timeline", "cards", "comparison"].includes(type)) {
+        const items = Array.isArray(visual.steps) ? visual.steps : Array.isArray(visual.items) ? visual.items : [];
+        const meaningfulItems = items.slice(0, 5).filter((item) => typeof item === "string"
+          ? item.trim()
+          : item && typeof item === "object" && [item.label, item.title, item.details].some((value) => typeof value === "string" && value.trim()));
+        return Math.max(1, meaningfulItems.length);
+      }
+      if (type === "graph") {
+        return Math.max(1, (Array.isArray(visual.points) ? visual.points : []).slice(0, 12)
+          .filter((point) => Array.isArray(point) && point.length === 2 && point.every((value) => Number.isFinite(Number(value)))).length);
+      }
+      if (type === "line_chart") {
+        const counts = (Array.isArray(visual.series) ? visual.series : []).slice(0, 4)
+          .filter((series) => series && Array.isArray(series.values))
+          .map((series) => series.values.slice(0, 12).filter((value) => Number.isFinite(Number(value))).length);
+        return Math.max(1, ...counts);
+      }
+      return 1;
+    };
+    const revealedVisual = (visual, visibleCount) => {
+      if (!visual || typeof visual !== "object" || Array.isArray(visual)) return visual;
+      const type = String(visual.type || "").toLowerCase();
+      if (type === "table") {
+        return { ...visual, rows: (Array.isArray(visual.rows) ? visual.rows : []).filter(Array.isArray).slice(0, 3).slice(0, visibleCount) };
+      }
+      if (type === "bar_chart" || type === "chart") {
+        const labels = Array.isArray(visual.labels) ? visual.labels.slice(0, 6) : [];
+        const values = Array.isArray(visual.values) ? visual.values.slice(0, labels.length) : [];
+        return { ...visual, labels: labels.slice(0, visibleCount), values: values.slice(0, visibleCount) };
+      }
+      if (["process", "timeline", "cards", "comparison"].includes(type)) {
+        const field = Array.isArray(visual.steps) ? "steps" : "items";
+        const items = Array.isArray(visual[field]) ? visual[field] : [];
+        const meaningfulItems = items.slice(0, 5).filter((item) => typeof item === "string"
+          ? item.trim()
+          : item && typeof item === "object" && [item.label, item.title, item.details].some((value) => typeof value === "string" && value.trim()));
+        return { ...visual, [field]: meaningfulItems.slice(0, visibleCount) };
+      }
+      if (type === "graph") {
+        const points = (Array.isArray(visual.points) ? visual.points : []).slice(0, 12)
+          .filter((point) => Array.isArray(point) && point.length === 2 && point.every((value) => Number.isFinite(Number(value))));
+        return { ...visual, points: points.slice(0, visibleCount) };
+      }
+      if (type === "line_chart") {
+        const series = (Array.isArray(visual.series) ? visual.series : []).slice(0, 4).map((item) => (
+          item && Array.isArray(item.values)
+            ? {
+              ...item,
+              values: item.values.slice(0, 12).filter((value) => Number.isFinite(Number(value))).slice(0, Math.min(12, visibleCount))
+            }
+            : item
+        ));
+        return { ...visual, series };
+      }
+      return visual;
+    };
     const revealUnitCount = (slide, mode) => {
       const points = (Array.isArray(slide.key_points) ? slide.key_points : [])
         .filter((point) => typeof point === "string" && point.trim()).slice(0, 12);
       const groupSize = mode === "item" || mode === "timed" ? 1 : 2;
-      return Math.ceil(points.length / groupSize) + Number(Boolean(slide.visual))
+      return Math.ceil(points.length / groupSize)
+        + Math.ceil(visualRevealUnitCount(slide.visual) / groupSize) * Number(Boolean(slide.visual))
+        + Number(Boolean(slide.image))
         + Number(Boolean(slide.visual_suggestion)) + Number(Boolean(slide.activity));
     };
     const revealedSlide = (slide, mode, step) => {
@@ -6410,10 +6506,20 @@
       const pointGroups = Math.ceil(points.length / groupSize);
       let remaining = Math.max(0, step - pointGroups);
       const visible = { ...slide, key_points: points.slice(0, Math.min(points.length, step * groupSize)) };
-      for (const field of ["visual", "visual_suggestion", "activity"]) {
+      for (const field of ["image", "visual", "visual_suggestion", "activity"]) {
         if (!slide[field]) continue;
-        if (remaining > 0) remaining--;
-        else delete visible[field];
+        const unitCount = field === "visual" ? visualRevealUnitCount(slide[field]) : 1;
+        const unitGroups = Math.ceil(unitCount / groupSize);
+        if (remaining >= unitGroups) {
+          remaining -= unitGroups;
+          if (field === "visual") visible[field] = revealedVisual(slide[field], unitCount);
+        } else if (remaining > 0 && field === "visual") {
+          visible[field] = revealedVisual(slide[field], Math.min(unitCount, remaining * groupSize));
+          remaining = 0;
+        } else {
+          delete visible[field];
+          remaining = 0;
+        }
       }
       return visible;
     };
@@ -6442,6 +6548,7 @@
         item.append(name, value, respondents);
         paceItems.append(item);
       });
+      updateFeedbackCount("pace", Object.values(counts).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0));
       if (lastReactionCounts) {
         const changes = Object.entries(labels)
           .filter(([key]) => Number(counts[key] || 0) > Number(lastReactionCounts[key] || 0))
@@ -6461,6 +6568,7 @@
       const options = Array.isArray(poll.options) ? poll.options : [];
       const counts = options.map((_, index) => Math.max(0, Number(poll.results?.[index] || 0)));
       const totalVotes = counts.reduce((sum, value) => sum + value, 0);
+      updateFeedbackCount("poll", totalVotes);
       pollFeedback.replaceChildren();
       const question = document.createElement("p");
       question.className = "presentation-poll-feedback-question";
@@ -6507,6 +6615,7 @@
       if (summary === lastQuestionSummary) return;
       lastQuestionSummary = summary;
       questionFeedback.replaceChildren();
+      updateFeedbackCount("questions", questions.length);
       if (!questions.length) {
         const empty = document.createElement("p");
         empty.className = "presentation-question-empty";
@@ -6514,54 +6623,12 @@
         questionFeedback.append(empty);
         return;
       }
-      questions.slice(-30).forEach((question) => {
-        const card = document.createElement("article");
-        card.className = "presentation-question-item";
-        const heading = document.createElement("strong");
-        heading.textContent = question.participant_name;
-        const text = document.createElement("p");
-        text.textContent = question.question;
-        const form = document.createElement("form");
-        form.dataset.presentationQuestionId = String(question.id);
-        const reply = document.createElement("textarea");
-        reply.name = "feedback";
-        reply.maxLength = 1000;
-        reply.required = true;
-        reply.rows = 2;
-        reply.placeholder = "Reply to this student…";
-        reply.value = question.teacher_feedback || "";
-        const button = document.createElement("button");
-        button.type = "submit";
-        button.className = "presentation-question-reply";
-        button.innerHTML = `<i class="fa-solid fa-reply"></i><small>${question.teacher_feedback ? "Update reply" : "Reply"}</small>`;
-        form.append(reply, button);
-        card.append(heading, text, form);
-        questionFeedback.append(card);
+      renderQuestionChat(questionFeedback, questions.slice(-30), liveSession?.id, (error) => {
+        setFeedback(error instanceof Error ? error.message : "The response could not be saved.", true);
+      }, (updatedQuestions) => {
+        lastQuestionSummary = JSON.stringify(updatedQuestions);
       });
     };
-    questionFeedback.addEventListener("submit", async (event) => {
-      const form = event.target.closest("form[data-presentation-question-id]");
-      if (!form) return;
-      event.preventDefault();
-      const reply = form.elements.namedItem("feedback").value.trim();
-      if (!reply || !liveSession) return;
-      const button = form.querySelector("button");
-      button.disabled = true;
-      try {
-        await workspaceRequest(
-          `/api/teacher/presentation-simulations/${liveSession.id}/questions/${form.dataset.presentationQuestionId}`,
-          "PUT",
-          { feedback: reply },
-          { silent: true }
-        );
-        lastQuestionSummary = "";
-        const state = await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`, "GET", null, { silent: true });
-        applyLiveState(state);
-      } catch (error) {
-        button.disabled = false;
-        setFeedback(error instanceof Error ? error.message : "The reply could not be sent.", true);
-      }
-    });
     const setTool = (tool) => {
       activeTool = activeTool === tool ? "none" : tool;
       dialog.querySelectorAll("[data-presentation-tool]").forEach((button) => {
@@ -6610,7 +6677,12 @@
       renderQuestionFeedback(Array.isArray(state.questions) ? state.questions : []);
       questionLiveFeedback.hidden = !feedbackPanels.questions;
       if (poll) {
+        if (activePollId !== String(poll.id || "")) {
+          activePollId = String(poll.id || "");
+          currentPollResponses = 0;
+        }
         const options = Array.isArray(poll.options) ? poll.options : [];
+        currentPollResponses = options.reduce((total, _, index) => total + Math.max(0, Number(poll.results?.[index] || 0)), 0);
         const summary = `${poll.question} · ${options.map((option, index) => `${option}: ${Number(poll.results?.[index] || 0)}`).join(" · ")} · ${poll.open ? "Open" : "Closed"}`;
         const pollKey = JSON.stringify([poll.question, options, poll.results, poll.responses, poll.open]);
         if (lastPollSummary !== pollKey) {
@@ -6620,6 +6692,7 @@
         pollLiveFeedback.hidden = !feedbackPanels.poll;
         lastPollSummary = pollKey;
       } else {
+        updateFeedbackCount("poll", currentPollResponses);
         if (pollResults.textContent !== "No open classroom check.") pollResults.textContent = "No open classroom check.";
         if (lastPollSummary) {
           pollFeedback.replaceChildren();
@@ -6703,8 +6776,36 @@
       : null;
     stageResizeObserver?.observe(stage);
     const renderActiveSlide = () => {
+      const previousArticle = stage.querySelector(".presentation-slide-preview");
+      const animateNewReveal = lastRevealRender?.slide === activeSlide
+        && lastRevealRender.mode === revealMode
+        && revealStep > lastRevealRender.step;
       const visibleSlide = revealedSlide(slides[activeSlide], revealMode, revealStep);
       stage.innerHTML = presentationSlideMarkup(visibleSlide, activeSlide, presentation);
+      const article = stage.querySelector(".presentation-slide-preview");
+      if (animateNewReveal && article) {
+        const revealSelectors = [
+          "li",
+          ".presentation-slide-image",
+          ".presentation-visual-cards > div > span",
+          ".presentation-visual-table tbody tr",
+          ".presentation-chart-column",
+          ".presentation-graph-point"
+        ];
+        revealSelectors.forEach((selector) => {
+          const previousCount = previousArticle?.querySelectorAll(selector).length || 0;
+          Array.from(article.querySelectorAll(selector)).slice(previousCount).forEach((item, index) => {
+            item.classList.add("presentation-item-zoom-in");
+            item.style.setProperty("--reveal-delay", `${index * 70}ms`);
+          });
+        });
+        const previousDetail = previousArticle?.querySelector(":scope > p");
+        const detail = article.querySelector(":scope > p");
+        if (detail?.textContent.trim() && detail.textContent !== previousDetail?.textContent) {
+          detail.classList.add("presentation-item-zoom-in");
+        }
+      }
+      lastRevealRender = { slide: activeSlide, mode: revealMode, step: revealStep };
       if (revealMode !== "all") {
         const marker = document.createElement("small");
         marker.className = "presentation-local-reveal-progress";
@@ -7086,6 +7187,9 @@
           }
         });
         liveSession = { id: result.id, url: result.url };
+        activePollId = "";
+        currentPollResponses = 0;
+        lastPollSummary = "";
         liveState = await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`);
         applyLiveState(liveState);
         activeSlide = startingSlide;
@@ -7116,23 +7220,48 @@
         linkInput.readOnly = true;
         linkInput.setAttribute("aria-label", "Student presentation follow link");
         linkInput.value = result.url;
+        const linkToggle = document.createElement("button");
+        linkToggle.type = "button";
+        linkToggle.className = "presentation-icon-button";
+        linkToggle.innerHTML = '<i class="fa-solid fa-eye-slash"></i><small>Hide link</small>';
+        linkToggle.setAttribute("aria-label", "Hide student presentation link");
+        linkToggle.setAttribute("aria-pressed", "true");
+        linkToggle.addEventListener("click", () => {
+          const hideLink = !linkInput.hidden;
+          linkInput.hidden = hideLink;
+          linkToggle.querySelector("i").className = `fa-solid fa-${hideLink ? "eye" : "eye-slash"}`;
+          linkToggle.querySelector("small").textContent = hideLink ? "Show link" : "Hide link";
+          linkToggle.setAttribute("aria-label", `${hideLink ? "Show" : "Hide"} student presentation link`);
+          linkToggle.setAttribute("aria-pressed", String(!hideLink));
+        });
         const copyButton = document.createElement("button");
         copyButton.type = "button";
         copyButton.className = "presentation-icon-button";
         copyButton.innerHTML = '<i class="fa-solid fa-copy"></i><small>Copy</small>';
         copyButton.setAttribute("aria-label", "Copy student link");
         copyButton.title = "Copy student link";
+        const copyFeedback = document.createElement("span");
+        copyFeedback.className = "presentation-copy-feedback";
+        copyFeedback.setAttribute("role", "status");
+        copyFeedback.setAttribute("aria-live", "polite");
+        let copyFeedbackTimer = null;
         copyButton.addEventListener("click", async () => {
+          if (copyFeedbackTimer !== null) window.clearTimeout(copyFeedbackTimer);
           try {
+            if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable.");
             await navigator.clipboard.writeText(result.url);
             copyFeedback.textContent = "Copied!";
             setFeedback("");
           } catch (error) {
             linkInput.focus();
             linkInput.select();
-            copyFeedback.textContent = "Link selected — copy it";
-            setFeedback(error instanceof Error ? error.message : "Copy is unavailable; copy the selected link.", true);
+            copyFeedback.textContent = "Link selected — copy it manually.";
+            setFeedback(error instanceof Error ? error.message : "Automatic copy failed; the link is selected for manual copying.", true);
           }
+          copyFeedbackTimer = window.setTimeout(() => {
+            copyFeedback.textContent = "";
+            copyFeedbackTimer = null;
+          }, 3000);
         });
         const endButton = document.createElement("button");
         endButton.type = "button";
@@ -7144,7 +7273,7 @@
         liveStatus.className = "presentation-live-status";
         liveStatus.setAttribute("aria-live", "polite");
         liveStatus.textContent = "Students follow reveals, drawings, polls, reactions and the class timer. Link expires in 12 hours.";
-        liveControls.replaceChildren(linkLabel, linkInput, copyButton, endButton, copyFeedback, liveStatus);
+        liveControls.replaceChildren(linkLabel, linkInput, linkToggle, copyButton, endButton, copyFeedback, liveStatus);
         const visibilityButton = (key, label, icon, panel) => {
           const button = document.createElement("button");
           button.type = "button";
@@ -7152,15 +7281,23 @@
           button.setAttribute("aria-pressed", String(feedbackPanels[key]));
           button.setAttribute("aria-label", `${feedbackPanels[key] ? "Hide" : "Show"} ${label}`);
           button.innerHTML = `<i class="fa-solid fa-${icon}"></i><small>${feedbackPanels[key] ? "Hide" : "Show"} ${label}</small>`;
+          feedbackVisibilityButtons[key] = button;
           button.addEventListener("click", () => {
             feedbackPanels[key] = !feedbackPanels[key];
             const visible = feedbackPanels[key];
             button.setAttribute("aria-pressed", String(visible));
             button.setAttribute("aria-label", `${visible ? "Hide" : "Show"} ${label}`);
-            button.innerHTML = `<i class="fa-solid fa-${visible ? icon : "eye"}"></i><small>${visible ? "Hide" : "Show"} ${label}</small>`;
+            button.querySelector("i").className = `fa-solid fa-${visible ? icon : "eye"}`;
+            button.querySelector("small").textContent = `${visible ? "Hide" : "Show"} ${label}`;
             panel.hidden = !visible;
+            updateFeedbackCount(key, key === "pace"
+              ? Object.values(liveState?.reaction_counts || {}).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0)
+              : key === "questions" ? liveState?.questions?.length || 0 : currentPollResponses);
           });
           liveControls.append(button);
+          updateFeedbackCount(key, key === "pace"
+            ? Object.values(liveState?.reaction_counts || {}).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0)
+            : key === "questions" ? liveState?.questions?.length || 0 : currentPollResponses);
         };
         visibilityButton("pace", "Pace", "gauge-high", paceSummary);
         visibilityButton("poll", "Poll", "square-poll-vertical", pollLiveFeedback);
@@ -7185,6 +7322,10 @@
               liveStatus.textContent = "Live session ended. Students can no longer view the presentation.";
               copyButton.disabled = true;
               linkInput.disabled = true;
+              linkToggle.disabled = true;
+              liveButton.disabled = false;
+              liveButton.innerHTML = '<i class="fa-solid fa-tower-broadcast"></i><small>Share</small>';
+              liveButton.setAttribute("aria-label", "Start student follow");
               stoppingLiveSession = null;
               return true;
             } catch (error) {
@@ -7199,6 +7340,7 @@
         stopLiveSession = endLiveSession;
         endButton.addEventListener("click", () => void endLiveSession());
         liveSharing.hidden = false;
+        delete liveSharing.dataset.ended;
         window.requestAnimationFrame(fitSlideToStage);
         liveButton.disabled = true;
         liveButton.innerHTML = '<i class="fa-solid fa-tower-broadcast"></i><small>Live</small>';
@@ -7360,14 +7502,162 @@
     planningDialogs.slides.showModal();
   }
 
+  function renderQuestionChat(container, questions, simulationId, onError = () => {}, onSaved = () => {}) {
+    container.replaceChildren();
+    questions.forEach((question) => {
+      const card = document.createElement("article");
+      card.className = "presentation-chat-thread";
+      const studentMeta = document.createElement("div");
+      studentMeta.className = "presentation-chat-meta presentation-chat-meta-student";
+      studentMeta.textContent = question.participant_name || "Student";
+      const studentMessage = document.createElement("p");
+      studentMessage.className = "presentation-chat-bubble presentation-chat-bubble-student";
+      studentMessage.textContent = question.question;
+      card.append(studentMeta, studentMessage);
+
+      if (question.teacher_feedback) {
+        const teacherMessage = document.createElement("p");
+        teacherMessage.className = "presentation-chat-bubble presentation-chat-bubble-teacher";
+        const teacherMeta = document.createElement("small");
+        teacherMeta.textContent = "Teacher";
+        const message = document.createElement("span");
+        message.textContent = question.teacher_feedback;
+        teacherMessage.append(teacherMeta, message);
+        card.append(teacherMessage);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "presentation-chat-actions";
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "presentation-chat-edit";
+      editButton.innerHTML = `<i class="fa-solid fa-${question.teacher_feedback ? "pen" : "reply"}" aria-hidden="true"></i><span>${question.teacher_feedback ? "Edit response" : "Reply"}</span>`;
+      actions.append(editButton);
+      card.append(actions);
+      editButton.addEventListener("click", () => {
+        editButton.disabled = true;
+        actions.hidden = true;
+        const form = document.createElement("form");
+        form.className = "presentation-chat-composer";
+        const reply = document.createElement("textarea");
+        reply.name = "feedback";
+        reply.maxLength = 1000;
+        reply.required = true;
+        reply.rows = 2;
+        reply.placeholder = "Write a response…";
+        reply.value = question.teacher_feedback || "";
+        const buttons = document.createElement("div");
+        buttons.className = "presentation-chat-composer-actions";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "presentation-chat-cancel";
+        cancel.textContent = "Cancel";
+        const save = document.createElement("button");
+        save.type = "submit";
+        save.className = "presentation-question-reply";
+        save.innerHTML = '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span>Save response</span>';
+        const errorMessage = document.createElement("small");
+        errorMessage.className = "presentation-chat-error";
+        buttons.append(cancel, save);
+        form.append(reply, errorMessage, buttons);
+        card.append(form);
+        cancel.addEventListener("click", () => {
+          form.remove();
+          actions.hidden = false;
+          editButton.disabled = false;
+        });
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const feedback = reply.value.trim();
+          if (!simulationId || !feedback) return;
+          save.disabled = true;
+          errorMessage.textContent = "";
+          try {
+            const result = await workspaceRequest(
+              `/api/teacher/presentation-simulations/${encodeURIComponent(simulationId)}/questions/${encodeURIComponent(question.id)}`,
+              "PUT",
+              { feedback },
+              { silent: true }
+            );
+            const updatedQuestions = questions.map((item) => Number(item.id) === Number(question.id)
+              ? { ...item, ...result.question }
+              : item);
+            renderQuestionChat(container, updatedQuestions, simulationId, onError, onSaved);
+            onSaved(updatedQuestions);
+          } catch (error) {
+            save.disabled = false;
+            errorMessage.textContent = error instanceof Error ? error.message : "The response could not be saved.";
+            onError(error);
+          }
+        });
+        reply.focus();
+      });
+    });
+  }
+
   const slidesHistoryDialog = document.getElementById("slides-history-dialog");
   const slidesHistoryList = slidesHistoryDialog.querySelector("[data-slides-history-list]");
   const slidesHistoryDetail = slidesHistoryDialog.querySelector("[data-slides-history-detail]");
+  function openPresentationHistory(parent = null) {
+    if (parent) {
+      const existing = parent.querySelector(".presentation-history-overlay");
+      if (existing) return;
+      const overlay = document.createElement("section");
+      overlay.className = "presentation-history-overlay";
+      overlay.setAttribute("aria-hidden", "false");
+      overlay.innerHTML = `
+        <div class="presentation-history-backdrop">
+          <section class="presentation-history-card" role="dialog" aria-modal="true" aria-labelledby="presentation-history-overlay-title">
+            <header class="lesson-wizard-header">
+              <div><span class="eyebrow"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> YOUR LIVE SESSIONS</span><h2 id="presentation-history-overlay-title">Presentation history</h2><p>Review saved slides, student participation, polls and questions from previous sessions.</p></div>
+              <button class="lesson-wizard-close" type="button" aria-label="Close presentation history"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </header>
+            <div class="slides-history-content">
+              <nav class="slides-history-list" aria-label="Past presentations"></nav>
+              <section class="slides-history-detail" aria-live="polite"><p class="field-help">Choose a presentation to review its saved session details.</p></section>
+            </div>
+          </section>
+        </div>`;
+      const historyList = overlay.querySelector(".slides-history-list");
+      const historyDetail = overlay.querySelector(".slides-history-detail");
+      const closeOverlay = () => {
+        overlay.remove();
+        parent.querySelector("[data-presentation-open-history]")?.focus();
+      };
+      overlay.querySelector(".lesson-wizard-close").addEventListener("click", closeOverlay);
+      overlay.querySelector(".presentation-history-backdrop").addEventListener("click", (event) => {
+        if (event.target === event.currentTarget) closeOverlay();
+      });
+      overlay.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeOverlay();
+        }
+      });
+      parent.append(overlay);
+      void loadPresentationHistory(historyList, historyDetail);
+      overlay.querySelector(".lesson-wizard-close").focus();
+      return;
+    }
+    slidesHistoryDialog.showModal();
+    void loadPresentationHistory();
+  }
   const appendHistorySection = (container, heading, entries) => {
     const section = document.createElement("section");
     section.className = "slides-history-section";
     const title = document.createElement("h4");
-    title.textContent = heading;
+    const icons = {
+      "Presentation & lecture notes": "chalkboard-user",
+      "Polls & responses": "square-poll-vertical",
+      "Pace responses": "gauge-high",
+      "Student questions & teacher replies": "comments"
+    };
+    const icon = document.createElement("i");
+    icon.className = `fa-solid fa-${icons[heading] || "circle-info"}`;
+    icon.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.textContent = heading;
+    title.append(icon, label);
     section.append(title);
     if (!entries.length) {
       const empty = document.createElement("p");
@@ -7385,22 +7675,22 @@
     }
     container.append(section);
   };
-  async function loadPresentationHistory() {
-    slidesHistoryList.replaceChildren();
-    slidesHistoryDetail.replaceChildren();
+  async function loadPresentationHistory(historyList = slidesHistoryList, historyDetail = slidesHistoryDetail) {
+    historyList.replaceChildren();
+    historyDetail.replaceChildren();
     const loading = document.createElement("p");
     loading.className = "field-help";
     loading.textContent = "Loading past presentations…";
-    slidesHistoryList.append(loading);
+    historyList.append(loading);
     try {
       const result = await workspaceRequest("/api/teacher/presentation-simulations", "GET", null, { silent: true });
-      slidesHistoryList.replaceChildren();
+      historyList.replaceChildren();
       const sessions = Array.isArray(result.sessions) ? result.sessions : [];
       if (!sessions.length) {
         const empty = document.createElement("p");
         empty.className = "field-help";
         empty.textContent = "No live presentation sessions have been saved yet.";
-        slidesHistoryList.append(empty);
+        historyList.append(empty);
         return;
       }
       sessions.forEach((session) => {
@@ -7408,36 +7698,45 @@
         button.type = "button";
         button.className = "slides-history-entry";
         button.dataset.simulationId = String(session.id);
+        const icon = document.createElement("span");
+        icon.className = "slides-history-entry-icon";
+        icon.innerHTML = '<i class="fa-solid fa-display" aria-hidden="true"></i>';
         const title = document.createElement("strong");
         title.textContent = session.title;
+        const metadata = document.createElement("span");
+        metadata.className = "slides-history-entry-meta";
         const date = document.createElement("small");
-        date.textContent = `${session.subject || "Presentation"} · ${new Intl.DateTimeFormat("en-GH", {
+        date.innerHTML = '<i class="fa-solid fa-calendar-days" aria-hidden="true"></i>';
+        const dateLabel = document.createElement("span");
+        dateLabel.textContent = `${session.subject || "Presentation"} · ${new Intl.DateTimeFormat("en-GH", {
           dateStyle: "medium",
           timeStyle: "short"
         }).format(new Date(session.ended_at || session.created_at))}`;
+        date.append(dateLabel);
         const summary = document.createElement("small");
-        summary.textContent = `${session.participant_count} students · ${session.poll_responses} poll answers · ${session.question_count} questions`;
-        button.append(title, date, summary);
-        button.addEventListener("click", () => void showPresentationHistory(session, button));
-        slidesHistoryList.append(button);
+        summary.innerHTML = `<i class="fa-solid fa-users" aria-hidden="true"></i><span>${Number(session.participant_count) || 0}</span><i class="fa-solid fa-square-poll-vertical" aria-hidden="true"></i><span>${Number(session.poll_responses) || 0}</span><i class="fa-solid fa-comments" aria-hidden="true"></i><span>${Number(session.question_count) || 0}</span>`;
+        metadata.append(date, summary);
+        button.append(icon, title, metadata);
+        button.addEventListener("click", () => void showPresentationHistory(session, button, historyList, historyDetail));
+        historyList.append(button);
       });
     } catch (error) {
-      slidesHistoryList.replaceChildren();
+      historyList.replaceChildren();
       const failure = document.createElement("p");
       failure.className = "field-help";
       failure.textContent = error instanceof Error ? error.message : "Presentation history could not be loaded.";
-      slidesHistoryList.append(failure);
+      historyList.append(failure);
     }
   }
-  async function showPresentationHistory(session, selectedButton) {
-    slidesHistoryList.querySelectorAll(".slides-history-entry").forEach((button) => {
+  async function showPresentationHistory(session, selectedButton, historyList = slidesHistoryList, historyDetail = slidesHistoryDetail) {
+    historyList.querySelectorAll(".slides-history-entry").forEach((button) => {
       button.setAttribute("aria-current", String(button === selectedButton));
     });
-    slidesHistoryDetail.replaceChildren();
+    historyDetail.replaceChildren();
     const loading = document.createElement("p");
     loading.className = "field-help";
     loading.textContent = "Loading session details…";
-    slidesHistoryDetail.append(loading);
+    historyDetail.append(loading);
     try {
       const history = await workspaceRequest(
         `/api/teacher/presentation-simulations/${encodeURIComponent(session.id)}/history`,
@@ -7445,26 +7744,27 @@
         null,
         { silent: true }
       );
-      slidesHistoryDetail.replaceChildren();
+      historyDetail.replaceChildren();
       const title = document.createElement("h3");
       title.textContent = history.title;
       const status = document.createElement("div");
       status.className = "slides-history-status";
       [
-        history.status === "ended" ? "Ended" : "In progress",
-        `${(history.presentation?.slides || []).length} slides`,
-        `${history.polls.length} polls`,
-        `${history.pace_responses.length} pace responses`
-      ].forEach((label) => {
+        { icon: history.status === "ended" ? "circle-check" : "tower-broadcast", label: history.status === "ended" ? "Ended" : "In progress" },
+        { icon: "display", label: `${(history.presentation?.slides || []).length} slides` },
+        { icon: "square-poll-vertical", label: `${history.polls.length} polls` },
+        { icon: "gauge-high", label: `${history.pace_responses.length} pace responses` }
+      ].forEach(({ icon: iconName, label }) => {
         const tag = document.createElement("span");
-        tag.textContent = label;
+        tag.innerHTML = `<i class="fa-solid fa-${iconName}" aria-hidden="true"></i>`;
+        tag.append(document.createTextNode(label));
         status.append(tag);
       });
-      slidesHistoryDetail.append(title, status);
+      historyDetail.append(title, status);
       const slides = (history.presentation?.slides || []).map((slide, index) =>
         `Slide ${index + 1}: ${slide.title || "Untitled"}${(slide.key_points || []).length ? ` — ${slide.key_points.join("; ")}` : ""}${slide.presenter_notes ? ` · Lecture notes: ${slide.presenter_notes}` : ""}`
       );
-      appendHistorySection(slidesHistoryDetail, "Presentation & lecture notes", slides);
+      appendHistorySection(historyDetail, "Presentation & lecture notes", slides);
       const polls = history.polls.map((poll) => {
         const options = (poll.options || []).map((option, index) => {
           const names = poll.responses.filter((response) => response.answer_index === index)
@@ -7473,23 +7773,47 @@
         });
         return `${poll.question} — ${options.join(" · ")}`;
       });
-      appendHistorySection(slidesHistoryDetail, "Polls & responses", polls);
+      appendHistorySection(historyDetail, "Polls & responses", polls);
       const paceLabels = { understood: "Understood", confused: "Confused", slower: "Slower", faster: "Faster" };
-      appendHistorySection(slidesHistoryDetail, "Pace responses",
+      appendHistorySection(historyDetail, "Pace responses",
         history.pace_responses.map((response) => `${response.participant_name}: ${paceLabels[response.reaction] || response.reaction}`));
-      appendHistorySection(slidesHistoryDetail, "Student questions & teacher replies",
-        history.questions.map((question) => `${question.participant_name}: ${question.question}${question.teacher_feedback ? ` — Teacher: ${question.teacher_feedback}` : " — No reply recorded"}`));
+      const questionSection = document.createElement("section");
+      questionSection.className = "slides-history-section presentation-history-chat";
+      const questionHeading = document.createElement("h4");
+      const questionIcon = document.createElement("i");
+      questionIcon.className = "fa-solid fa-comments";
+      questionIcon.setAttribute("aria-hidden", "true");
+      const questionTitle = document.createElement("span");
+      questionTitle.textContent = `Student questions & teacher replies · ${history.questions.length}`;
+      questionHeading.append(questionIcon, questionTitle);
+      questionSection.append(questionHeading);
+      if (!history.questions.length) {
+        const empty = document.createElement("p");
+        empty.className = "field-help";
+        empty.textContent = "No student questions were recorded.";
+        questionSection.append(empty);
+      } else {
+        const thread = document.createElement("div");
+        thread.className = "presentation-chat-history";
+        questionSection.append(thread);
+        renderQuestionChat(thread, history.questions, history.id, (error) => {
+          showToast(error instanceof Error ? error.message : "The response could not be saved.", "error");
+        }, (updatedQuestions) => {
+          history.questions = updatedQuestions;
+          questionTitle.textContent = `Student questions & teacher replies · ${updatedQuestions.length}`;
+        });
+      }
+      historyDetail.append(questionSection);
     } catch (error) {
-      slidesHistoryDetail.replaceChildren();
+      historyDetail.replaceChildren();
       const failure = document.createElement("p");
       failure.className = "field-help";
       failure.textContent = error instanceof Error ? error.message : "Presentation details could not be loaded.";
-      slidesHistoryDetail.append(failure);
+      historyDetail.append(failure);
     }
   }
   document.getElementById("slides-history-button").addEventListener("click", () => {
-    slidesHistoryDialog.showModal();
-    void loadPresentationHistory();
+    openPresentationHistory();
   });
   slidesHistoryDialog.querySelector("[data-close-slides-history]").addEventListener("click", () => slidesHistoryDialog.close());
 
