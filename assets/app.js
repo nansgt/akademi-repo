@@ -8,6 +8,44 @@
     scheme: "Scheme of work",
     slides: "Presentation outline"
   };
+  const LIVE_PRESENTATION_STORAGE_KEY = "akademi-active-live-presentation";
+  function saveActiveLivePresentation(session) {
+    try {
+      sessionStorage.setItem(LIVE_PRESENTATION_STORAGE_KEY, JSON.stringify(session));
+    } catch (error) {
+      console.error("The active presentation could not be saved for reload recovery.", error);
+      showToast("This browser could not save the live session for recovery. Keep this tab open to preserve the student link.", "error");
+    }
+  }
+  function loadActiveLivePresentation() {
+    try {
+      const saved = sessionStorage.getItem(LIVE_PRESENTATION_STORAGE_KEY);
+      if (!saved) return null;
+      const session = JSON.parse(saved);
+      if (!session || !Number.isInteger(session.id) || session.id < 1
+        || typeof session.url !== "string"
+        || typeof session.title !== "string" || !session.presentation
+        || !Array.isArray(session.presentation.slides) || !session.presentation.slides.length) {
+        throw new Error("The saved live presentation data is invalid.");
+      }
+      return session;
+    } catch (error) {
+      console.warn("The saved live presentation could not be restored.", error);
+      try {
+        sessionStorage.removeItem(LIVE_PRESENTATION_STORAGE_KEY);
+      } catch (removeError) {
+        console.error("Invalid live presentation recovery data could not be cleared.", removeError);
+      }
+      return null;
+    }
+  }
+  function clearActiveLivePresentation() {
+    try {
+      sessionStorage.removeItem(LIVE_PRESENTATION_STORAGE_KEY);
+    } catch (error) {
+      console.error("The ended live presentation recovery data could not be cleared.", error);
+    }
+  }
   const TYPE_ICONS = { lesson: ["book-open", "sage"], assessment: ["clipboard-check", "blue"], scheme: ["file-lines", "gold"], slides: ["file-lines", "lavender"] };
   const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const schoolDays = weekdays.slice(0, 5);
@@ -6236,7 +6274,7 @@
     return { failed, unavailable };
   }
 
-  function openPresentationViewer(data, title) {
+  function openPresentationViewer(data, title, resumedSession = null) {
     const presentation = normalizePresentationData(data);
     const slides = ensurePresentationVisuals(presentation.slides || []);
     if (!slides.length) {
@@ -6246,6 +6284,7 @@
 
     const dialog = document.createElement("dialog");
     dialog.className = "presentation-viewer-dialog";
+    if (resumedSession) dialog.dataset.presentationSimulationId = String(resumedSession.id);
     dialog.setAttribute("aria-label", `${title || presentation.title || "Presentation"} slideshow`);
     dialog.innerHTML = `
       <div class="presentation-fullscreen-content">
@@ -6314,6 +6353,13 @@
       </header>
       <div class="presentation-live-sharing" data-presentation-live-sharing hidden>
         <div class="presentation-live-controls" data-presentation-live-controls></div>
+        <section class="presentation-feedback-card presentation-participants" aria-label="Students in this presentation">
+          <h3><i class="fa-solid fa-users"></i> Students joined <span class="presentation-live-count" data-presentation-participant-count>0</span></h3>
+          <p class="presentation-participant-online" data-presentation-participant-online>0 online</p>
+          <ul class="presentation-participant-list" data-presentation-participant-list>
+            <li class="presentation-participant-empty">No students have joined yet.</li>
+          </ul>
+        </section>
         <section class="presentation-feedback-card presentation-pace-card" data-presentation-pace-summary aria-label="Class pace responses">
           <h3><i class="fa-solid fa-gauge-high"></i> Class pace <span class="presentation-live-count" data-presentation-feedback-count="pace" hidden></span></h3>
           <div class="presentation-feedback-items" data-presentation-pace-items></div>
@@ -6366,9 +6412,12 @@
     });
     const paceSummary = dialog.querySelector("[data-presentation-pace-summary]");
     const paceItems = dialog.querySelector("[data-presentation-pace-items]");
+    const participantCount = dialog.querySelector("[data-presentation-participant-count]");
+    const participantOnline = dialog.querySelector("[data-presentation-participant-online]");
+    const participantList = dialog.querySelector("[data-presentation-participant-list]");
     const reactionNotice = dialog.querySelector("[data-presentation-reaction-notice]");
     let activeSlide = 0;
-    let liveSession = null;
+    let liveSession = resumedSession ? { id: resumedSession.id, url: resumedSession.url } : null;
     let stopLiveSession = async () => true;
     let stoppingLiveSession = null;
     let slideUpdatePending = false;
@@ -6397,6 +6446,7 @@
     let fullscreenActive = false;
     let lastPollSummary = "";
     let lastQuestionSummary = "";
+    let lastParticipantSummary = "";
     const feedbackPanels = { pace: true, poll: true, questions: false };
     const feedbackVisibilityButtons = {};
     let activePollId = "";
@@ -6564,6 +6614,33 @@
       }
       lastReactionCounts = { ...counts };
     };
+    const renderParticipants = (participants = []) => {
+      const summary = JSON.stringify(participants);
+      if (summary === lastParticipantSummary) return;
+      lastParticipantSummary = summary;
+      const students = Array.isArray(participants) ? participants : [];
+      participantCount.textContent = String(students.length);
+      participantOnline.textContent = `${students.filter((student) => student.online).length} online`;
+      participantList.replaceChildren();
+      if (!students.length) {
+        const empty = document.createElement("li");
+        empty.className = "presentation-participant-empty";
+        empty.textContent = "No students have joined yet.";
+        participantList.append(empty);
+        return;
+      }
+      students.forEach((student) => {
+        const item = document.createElement("li");
+        item.className = "presentation-participant";
+        const name = document.createElement("span");
+        name.textContent = student.name || "Student";
+        const presence = document.createElement("small");
+        presence.className = student.online ? "is-online" : "is-offline";
+        presence.textContent = student.online ? "Online" : "Away";
+        item.append(name, presence);
+        participantList.append(item);
+      });
+    };
     const renderPollFeedback = (poll) => {
       const options = Array.isArray(poll.options) ? poll.options : [];
       const counts = options.map((_, index) => Math.max(0, Number(poll.results?.[index] || 0)));
@@ -6597,12 +6674,7 @@
         fill.style.width = `${percentage}%`;
         meter.append(fill);
         const countLabel = document.createElement("strong");
-        countLabel.append(document.createTextNode(`${votes} · ${percentage}%`));
-        const respondents = document.createElement("small");
-        respondents.textContent = (poll.responses || [])
-          .filter((response) => Number(response.answer_index) === index)
-          .map((response) => response.participant_name).join(", ");
-        countLabel.append(respondents);
+        countLabel.textContent = `${votes} · ${percentage}%`;
         row.append(label, meter, countLabel);
         rows.append(row);
       });
@@ -6627,7 +6699,7 @@
         setFeedback(error instanceof Error ? error.message : "The response could not be saved.", true);
       }, (updatedQuestions) => {
         lastQuestionSummary = JSON.stringify(updatedQuestions);
-      });
+      }, true);
     };
     const setTool = (tool) => {
       activeTool = activeTool === tool ? "none" : tool;
@@ -6673,6 +6745,7 @@
       if (Number(state.reveal_interval_seconds) >= 2) revealInterval.value = String(state.reveal_interval_seconds);
       const poll = state.active_poll;
       updateReactionFeedback(state.reaction_counts || {}, state.reaction_responses || []);
+      renderParticipants(state.participants || []);
       paceSummary.hidden = !feedbackPanels.pace;
       renderQuestionFeedback(Array.isArray(state.questions) ? state.questions : []);
       questionLiveFeedback.hidden = !feedbackPanels.questions;
@@ -6684,7 +6757,7 @@
         const options = Array.isArray(poll.options) ? poll.options : [];
         currentPollResponses = options.reduce((total, _, index) => total + Math.max(0, Number(poll.results?.[index] || 0)), 0);
         const summary = `${poll.question} · ${options.map((option, index) => `${option}: ${Number(poll.results?.[index] || 0)}`).join(" · ")} · ${poll.open ? "Open" : "Closed"}`;
-        const pollKey = JSON.stringify([poll.question, options, poll.results, poll.responses, poll.open]);
+        const pollKey = JSON.stringify([poll.question, options, poll.results, poll.open]);
         if (lastPollSummary !== pollKey) {
           renderPollFeedback(poll);
           pollResults.textContent = summary;
@@ -7174,7 +7247,7 @@
         const startingSlide = activeSlide;
         const startingReveal = revealStep;
         const startingRevealMode = revealMode;
-        const result = await workspaceRequest("/api/teacher/presentation-simulations", "POST", {
+        const result = resumedSession || await workspaceRequest("/api/teacher/presentation-simulations", "POST", {
           title: title || presentation.title || "Class presentation",
           presentation: {
             subject: presentation.subject || "",
@@ -7187,23 +7260,82 @@
           }
         });
         liveSession = { id: result.id, url: result.url };
+        dialog.dataset.presentationSimulationId = String(liveSession.id);
+        if (!resumedSession) {
+          saveActiveLivePresentation({
+            id: liveSession.id,
+            url: liveSession.url,
+            title: title || presentation.title || "Class presentation",
+            presentation: { ...presentation, slides }
+          });
+        }
         activePollId = "";
         currentPollResponses = 0;
         lastPollSummary = "";
         liveState = await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`);
-        applyLiveState(liveState);
-        activeSlide = startingSlide;
-        revealStep = startingReveal;
-        revealMode = startingRevealMode;
-        await updateLiveState({
-          active_slide: activeSlide,
-          reveal_step: revealStep,
-          reveal_mode: revealMode
+        if (liveState.status !== "active") {
+          clearActiveLivePresentation();
+          liveSession = null;
+          throw new Error("This live presentation has ended or expired. Start a new student follow session.");
+        }
+        if (!liveState.student_url) {
+          let previousToken = null;
+          if (result.url) {
+            try {
+              previousToken = new URL(result.url, window.location.href).searchParams.get("token");
+            } catch (error) {
+              console.warn("The saved student link could not be parsed for recovery.", error);
+            }
+          }
+          const linkResult = await workspaceRequest(
+            `/api/teacher/presentation-simulations/${liveSession.id}/student-link`,
+            "POST",
+            previousToken ? { token: previousToken } : {}
+          );
+          liveState.student_url = linkResult.url;
+        }
+        result.url = liveState.student_url;
+        liveSession.url = result.url;
+        saveActiveLivePresentation({
+          id: liveSession.id,
+          url: liveSession.url,
+          title: title || result.title || presentation.title || "Class presentation",
+          presentation: { ...presentation, slides }
         });
+        applyLiveState(liveState);
+        if (!resumedSession) {
+          activeSlide = startingSlide;
+          revealStep = startingReveal;
+          revealMode = startingRevealMode;
+          await updateLiveState({
+            active_slide: activeSlide,
+            reveal_step: revealStep,
+            reveal_mode: revealMode
+          });
+        }
         const pollOwnerState = async () => {
           if (!liveSession || !dialog.open) return;
           try {
             const state = await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`, "GET", null, { silent: true });
+            if (state.status !== "active") {
+              const endedSessionId = liveSession.id;
+              clearActiveLivePresentation();
+              liveSession = null;
+              if (ownerPollTimer !== null) window.clearTimeout(ownerPollTimer);
+              ownerPollTimer = null;
+              liveSharing.dataset.ended = "true";
+              liveStatus.textContent = "Live session ended. Students can no longer view the presentation.";
+              copyButton.disabled = true;
+              linkInput.disabled = true;
+              linkToggle.disabled = true;
+              liveButton.disabled = false;
+              liveButton.innerHTML = '<i class="fa-solid fa-tower-broadcast"></i><small>Share</small>';
+              liveButton.setAttribute("aria-label", "Start student follow");
+              endButton.disabled = true;
+              endButton.innerHTML = '<i class="fa-solid fa-check"></i><small>Done</small>';
+              endButton.setAttribute("aria-label", `Session ${endedSessionId} ended`);
+              return;
+            }
             if (stateWritePending === 0) applyLiveState(state);
           } catch (error) {
             setFeedback(error instanceof Error ? `Reconnecting… ${error.message}` : "Reconnecting to students…", true);
@@ -7214,18 +7346,21 @@
         const linkLabel = document.createElement("span");
         linkLabel.className = "presentation-live-label";
         linkLabel.innerHTML = '<i class="fa-solid fa-users"></i> Student link';
+        linkLabel.hidden = !result.url;
         const linkInput = document.createElement("input");
         linkInput.className = "presentation-live-link";
         linkInput.type = "text";
         linkInput.readOnly = true;
         linkInput.setAttribute("aria-label", "Student presentation follow link");
         linkInput.value = result.url;
+        linkInput.hidden = !result.url;
         const linkToggle = document.createElement("button");
         linkToggle.type = "button";
         linkToggle.className = "presentation-icon-button";
         linkToggle.innerHTML = '<i class="fa-solid fa-eye-slash"></i><small>Hide link</small>';
         linkToggle.setAttribute("aria-label", "Hide student presentation link");
         linkToggle.setAttribute("aria-pressed", "true");
+        linkToggle.hidden = !result.url;
         linkToggle.addEventListener("click", () => {
           const hideLink = !linkInput.hidden;
           linkInput.hidden = hideLink;
@@ -7240,6 +7375,7 @@
         copyButton.innerHTML = '<i class="fa-solid fa-copy"></i><small>Copy</small>';
         copyButton.setAttribute("aria-label", "Copy student link");
         copyButton.title = "Copy student link";
+        copyButton.disabled = !result.url;
         const copyFeedback = document.createElement("span");
         copyFeedback.className = "presentation-copy-feedback";
         copyFeedback.setAttribute("role", "status");
@@ -7272,7 +7408,7 @@
         const liveStatus = document.createElement("span");
         liveStatus.className = "presentation-live-status";
         liveStatus.setAttribute("aria-live", "polite");
-        liveStatus.textContent = "Students follow reveals, drawings, polls, reactions and the class timer. Link expires in 12 hours.";
+        liveStatus.textContent = "Students follow reveals, drawings, polls, reactions and the class timer. The secure link remains available until this session expires.";
         liveControls.replaceChildren(linkLabel, linkInput, linkToggle, copyButton, endButton, copyFeedback, liveStatus);
         const visibilityButton = (key, label, icon, panel) => {
           const button = document.createElement("button");
@@ -7313,6 +7449,7 @@
                 active_slide: activeSlide,
                 status: "ended"
               });
+              clearActiveLivePresentation();
               if (liveSession?.id === sessionId) liveSession = null;
               if (ownerPollTimer !== null) window.clearTimeout(ownerPollTimer);
               ownerPollTimer = null;
@@ -7404,6 +7541,7 @@
     dialog.showModal();
     window.requestAnimationFrame(fitSlideToStage);
     dialog.querySelector("[data-presentation-next]").focus();
+    if (resumedSession) liveButton.click();
   }
 
   document.addEventListener("click", (event) => {
@@ -7502,11 +7640,16 @@
     planningDialogs.slides.showModal();
   }
 
-  function renderQuestionChat(container, questions, simulationId, onError = () => {}, onSaved = () => {}) {
+  function renderQuestionChat(container, questions, simulationId, onError = () => {}, onSaved = () => {}, showReplyComposer = false) {
+    const drafts = new Map([...container.querySelectorAll(".presentation-chat-composer")].map((form) => [
+      form.dataset.questionId,
+      form.querySelector("textarea")?.value || ""
+    ]));
     container.replaceChildren();
     questions.forEach((question) => {
       const card = document.createElement("article");
       card.className = "presentation-chat-thread";
+      card.dataset.questionId = String(question.id);
       const studentMeta = document.createElement("div");
       studentMeta.className = "presentation-chat-meta presentation-chat-meta-student";
       studentMeta.textContent = question.participant_name || "Student";
@@ -7515,37 +7658,41 @@
       studentMessage.textContent = question.question;
       card.append(studentMeta, studentMessage);
 
-      if (question.teacher_feedback) {
+      const teacherReplies = Array.isArray(question.teacher_replies) && question.teacher_replies.length
+        ? question.teacher_replies
+        : question.teacher_feedback ? [{ feedback: question.teacher_feedback }] : [];
+      teacherReplies.forEach((reply) => {
         const teacherMessage = document.createElement("p");
         teacherMessage.className = "presentation-chat-bubble presentation-chat-bubble-teacher";
         const teacherMeta = document.createElement("small");
         teacherMeta.textContent = "Teacher";
         const message = document.createElement("span");
-        message.textContent = question.teacher_feedback;
+        message.textContent = reply.feedback;
         teacherMessage.append(teacherMeta, message);
         card.append(teacherMessage);
-      }
+      });
 
       const actions = document.createElement("div");
       actions.className = "presentation-chat-actions";
       const editButton = document.createElement("button");
       editButton.type = "button";
       editButton.className = "presentation-chat-edit";
-      editButton.innerHTML = `<i class="fa-solid fa-${question.teacher_feedback ? "pen" : "reply"}" aria-hidden="true"></i><span>${question.teacher_feedback ? "Edit response" : "Reply"}</span>`;
+      editButton.innerHTML = `<i class="fa-solid fa-reply" aria-hidden="true"></i><span>${teacherReplies.length ? "Reply again" : "Reply"}</span>`;
       actions.append(editButton);
       card.append(actions);
-      editButton.addEventListener("click", () => {
+      const openComposer = (focus = true) => {
         editButton.disabled = true;
         actions.hidden = true;
         const form = document.createElement("form");
         form.className = "presentation-chat-composer";
+        form.dataset.questionId = String(question.id);
         const reply = document.createElement("textarea");
         reply.name = "feedback";
         reply.maxLength = 1000;
         reply.required = true;
         reply.rows = 2;
         reply.placeholder = "Write a response…";
-        reply.value = question.teacher_feedback || "";
+        reply.value = drafts.get(String(question.id)) ?? "";
         const buttons = document.createElement("div");
         buttons.className = "presentation-chat-composer-actions";
         const cancel = document.createElement("button");
@@ -7582,7 +7729,7 @@
             const updatedQuestions = questions.map((item) => Number(item.id) === Number(question.id)
               ? { ...item, ...result.question }
               : item);
-            renderQuestionChat(container, updatedQuestions, simulationId, onError, onSaved);
+            renderQuestionChat(container, updatedQuestions, simulationId, onError, onSaved, showReplyComposer);
             onSaved(updatedQuestions);
           } catch (error) {
             save.disabled = false;
@@ -7590,8 +7737,13 @@
             onError(error);
           }
         });
-        reply.focus();
-      });
+        if (focus) reply.focus();
+      };
+      editButton.addEventListener("click", () => openComposer());
+      if (showReplyComposer && teacherReplies.length === 0) {
+        openComposer(false);
+      }
+      container.append(card);
     });
   }
 
@@ -7703,6 +7855,12 @@
         icon.innerHTML = '<i class="fa-solid fa-display" aria-hidden="true"></i>';
         const title = document.createElement("strong");
         title.textContent = session.title;
+        const entryHeading = document.createElement("span");
+        entryHeading.className = "slides-history-entry-heading";
+        const statusBadge = document.createElement("span");
+        statusBadge.className = `presentation-history-status-badge ${session.status === "active" ? "is-active" : "is-ended"}`;
+        statusBadge.textContent = session.status === "active" ? "Ongoing" : "Ended";
+        entryHeading.append(title, statusBadge);
         const metadata = document.createElement("span");
         metadata.className = "slides-history-entry-meta";
         const date = document.createElement("small");
@@ -7716,7 +7874,7 @@
         const summary = document.createElement("small");
         summary.innerHTML = `<i class="fa-solid fa-users" aria-hidden="true"></i><span>${Number(session.participant_count) || 0}</span><i class="fa-solid fa-square-poll-vertical" aria-hidden="true"></i><span>${Number(session.poll_responses) || 0}</span><i class="fa-solid fa-comments" aria-hidden="true"></i><span>${Number(session.question_count) || 0}</span>`;
         metadata.append(date, summary);
-        button.append(icon, title, metadata);
+        button.append(icon, entryHeading, metadata);
         button.addEventListener("click", () => void showPresentationHistory(session, button, historyList, historyDetail));
         historyList.append(button);
       });
@@ -7747,6 +7905,65 @@
       historyDetail.replaceChildren();
       const title = document.createElement("h3");
       title.textContent = history.title;
+      if (history.status === "active") {
+        const actions = document.createElement("div");
+        actions.className = "presentation-history-actions";
+        const resumeButton = document.createElement("button");
+        resumeButton.type = "button";
+        resumeButton.className = "button button-primary presentation-history-resume";
+        resumeButton.innerHTML = '<i class="fa-solid fa-play" aria-hidden="true"></i> Resume live presentation';
+        resumeButton.addEventListener("click", () => {
+          const currentViewer = historyDetail.closest(".presentation-viewer-dialog");
+          if (currentViewer?.dataset.presentationSimulationId === String(history.id)) {
+            historyDetail.closest(".presentation-history-overlay")?.remove();
+            showToast("This live presentation is already open.");
+            return;
+          }
+          const savedSession = loadActiveLivePresentation();
+          const resumedSession = {
+            id: Number(history.id),
+            url: Number(savedSession?.id) === Number(history.id)
+              ? savedSession.url
+              : "",
+            title: history.title,
+            presentation: history.presentation
+          };
+          saveActiveLivePresentation(resumedSession);
+          if (slidesHistoryDialog.open) slidesHistoryDialog.close();
+          historyDetail.closest(".presentation-history-overlay")?.remove();
+          openPresentationViewer(resumedSession.presentation, resumedSession.title, resumedSession);
+        });
+        const endButton = document.createElement("button");
+        endButton.type = "button";
+        endButton.className = "button presentation-history-end";
+        endButton.innerHTML = '<i class="fa-solid fa-stop" aria-hidden="true"></i> End presentation';
+        endButton.addEventListener("click", async () => {
+          if (!window.confirm("End this live presentation? Students will no longer be able to follow it.")) return;
+          endButton.disabled = true;
+          try {
+            await workspaceRequest(
+              `/api/teacher/presentation-simulations/${encodeURIComponent(history.id)}`,
+              "PUT",
+              { status: "ended" },
+              { silent: true }
+            );
+            const activeSession = loadActiveLivePresentation();
+            if (Number(activeSession?.id) === Number(history.id)) clearActiveLivePresentation();
+            showToast("The live presentation has ended.");
+            await loadPresentationHistory(historyList, historyDetail);
+            const refreshedButton = [...historyList.querySelectorAll(".slides-history-entry")]
+              .find((button) => button.dataset.simulationId === String(history.id));
+            if (refreshedButton) {
+              await showPresentationHistory(history, refreshedButton, historyList, historyDetail);
+            }
+          } catch (error) {
+            endButton.disabled = false;
+            showToast(error instanceof Error ? error.message : "The presentation could not be ended.", "error");
+          }
+        });
+        actions.append(resumeButton, endButton);
+        historyDetail.append(actions);
+      }
       const status = document.createElement("div");
       status.className = "slides-history-status";
       [
@@ -7767,9 +7984,8 @@
       appendHistorySection(historyDetail, "Presentation & lecture notes", slides);
       const polls = history.polls.map((poll) => {
         const options = (poll.options || []).map((option, index) => {
-          const names = poll.responses.filter((response) => response.answer_index === index)
-            .map((response) => response.participant_name);
-          return `${option}: ${names.length ? names.join(", ") : "No responses"}`;
+          const responses = poll.responses.filter((response) => response.answer_index === index).length;
+          return `${option}: ${responses} ${responses === 1 ? "response" : "responses"}`;
         });
         return `${poll.question} — ${options.join(" · ")}`;
       });
@@ -10586,6 +10802,51 @@
   configureAssessmentTopics();
   const requestedPage = new URLSearchParams(window.location.search).get("page");
   if (requestedPage) goTo(requestedPage);
+  async function recoverUnstoredLivePresentation() {
+    try {
+      const { sessions = [] } = await workspaceRequest(
+        "/api/teacher/presentation-simulations",
+        "GET",
+        null,
+        { silent: true }
+      );
+      const activeSessions = sessions.filter((session) => session.status === "active");
+      if (activeSessions.length !== 1) {
+        if (activeSessions.length > 1) {
+          showToast("More than one live presentation is active. Open its session from Presentation history to resume.", "error");
+        }
+        return;
+      }
+      const session = activeSessions[0];
+      const details = await workspaceRequest(
+        `/api/teacher/presentation-simulations/${encodeURIComponent(session.id)}/history`,
+        "GET",
+        null,
+        { silent: true }
+      );
+      if (!Array.isArray(details.presentation?.slides) || !details.presentation.slides.length) {
+        throw new Error("The active presentation's slides could not be recovered.");
+      }
+      const recovered = {
+        id: Number(session.id),
+        url: "",
+        title: String(session.title || details.title || "Class presentation"),
+        presentation: details.presentation
+      };
+      saveActiveLivePresentation(recovered);
+      openPresentationViewer(recovered.presentation, recovered.title, recovered);
+      showToast("Resumed the existing live presentation. Students can keep using the link already shared.");
+    } catch (error) {
+      console.error("The active presentation could not be recovered.", error);
+      showToast(error instanceof Error ? error.message : "The active presentation could not be recovered.", "error");
+    }
+  }
+  const activeLivePresentation = loadActiveLivePresentation();
+  if (activeLivePresentation) {
+    openPresentationViewer(activeLivePresentation.presentation, activeLivePresentation.title, activeLivePresentation);
+  } else if (requestedPage === "slides") {
+    void recoverUnstoredLivePresentation();
+  }
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     window.addEventListener("load", () => {

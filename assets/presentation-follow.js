@@ -22,6 +22,7 @@
   const questionCount = document.querySelector("[data-follow-question-count]");
   const themes = new Set(["modern", "editorial", "vibrant", "data", "minimal"]);
   let timer = null;
+  let presenceTimer = null;
   let countdownTimer = null;
   let lastSlideKey = "";
   let lastRevealRender = null;
@@ -34,6 +35,7 @@
   let latestState = null;
   let interactionRevision = 0;
   let interactionPending = false;
+  let presencePending = false;
   let participantId = "";
   let participantName = "";
   let lastQuestionsKey = "";
@@ -268,7 +270,7 @@
   function renderPoll(poll) {
     pollPanel.replaceChildren();
     const selected = poll ? ownAnswers.get(poll.id) : undefined;
-    pollPanel.hidden = !poll;
+    pollPanel.hidden = !poll || selected !== undefined;
     if (!poll) return;
     pollPanel.append(textElement("h2", poll.question, "presentation-follow-poll-question"));
     const options = Array.isArray(poll.options) ? poll.options : [];
@@ -335,9 +337,14 @@
       const card = document.createElement("article");
       card.className = "presentation-follow-question-item";
       card.append(textElement("p", question.question));
-      card.append(textElement("small", question.teacher_feedback
-        ? `👩‍🏫 Teacher: ${question.teacher_feedback}`
-        : "Waiting for your teacher's reply"));
+      const replies = Array.isArray(question.teacher_replies) && question.teacher_replies.length
+        ? question.teacher_replies
+        : question.teacher_feedback ? [{ feedback: question.teacher_feedback }] : [];
+      if (replies.length) {
+        replies.forEach((reply) => card.append(textElement("small", `👩‍🏫 Teacher: ${reply.feedback}`)));
+      } else {
+        card.append(textElement("small", "Waiting for your teacher's reply"));
+      }
       questionList.append(card);
     });
   }
@@ -388,6 +395,25 @@
     }
   }
 
+  async function sendPresence() {
+    if (stopped || !participantId || !participantName || presencePending) return;
+    presencePending = true;
+    try {
+      const response = await fetch(`${basePath}/api/presentation-simulations/${encodeURIComponent(token)}/join`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ participant_id: participantId, participant_name: participantName })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Your teacher could not be notified that you joined.");
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "Your teacher could not be notified that you joined.";
+    } finally {
+      presencePending = false;
+    }
+  }
+
   function updateTimer(data) {
     if (countdownTimer !== null) window.clearInterval(countdownTimer);
     const endsAt = data.timer_ends_at ? Date.parse(data.timer_ends_at) : NaN;
@@ -408,6 +434,7 @@
     joinGate.hidden = true;
     experience.hidden = false;
     if (timer !== null) window.clearTimeout(timer);
+    if (presenceTimer !== null) window.clearInterval(presenceTimer);
     if (countdownTimer !== null) window.clearInterval(countdownTimer);
     status.textContent = message;
     stage.replaceChildren(textElement("p", message, "presentation-follow-placeholder"));
@@ -644,8 +671,67 @@
     if (!stopped) timer = window.setTimeout(poll, document.hidden ? 4000 : 180);
   }
 
+  function participantStorageKey(kind) {
+    return `akademi-presentation-${kind}-${token}`;
+  }
+
+  function readParticipantValue(kind) {
+    const key = participantStorageKey(kind);
+    for (const storageName of ["localStorage", "sessionStorage"]) {
+      try {
+        const storage = window[storageName];
+        const value = storage.getItem(key);
+        if (value) return value;
+      } catch (error) {
+        console.warn("A stored student identity could not be read.", error);
+      }
+    }
+    const cookieName = `akademi_presentation_${kind}_${token}`;
+    const cookie = document.cookie.split("; ").find((item) => item.startsWith(`${cookieName}=`));
+    if (!cookie) return "";
+    try {
+      return decodeURIComponent(cookie.slice(cookieName.length + 1));
+    } catch (error) {
+      console.warn("The saved student identity cookie is invalid.", error);
+      return "";
+    }
+  }
+
+  function saveParticipantValue(kind, value) {
+    const key = participantStorageKey(kind);
+    let saved = false;
+    for (const storageName of ["localStorage", "sessionStorage"]) {
+      try {
+        const storage = window[storageName];
+        storage.setItem(key, value);
+        saved = storage.getItem(key) === value || saved;
+      } catch (error) {
+        console.warn("A student identity could not be saved in browser storage.", error);
+      }
+    }
+    const cookieName = `akademi_presentation_${kind}_${token}`;
+    const cookiePath = basePath || "/";
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    try {
+      document.cookie = `${cookieName}=${encodeURIComponent(value)}; Max-Age=43200; Path=${cookiePath}; SameSite=Lax${secure}`;
+      saved = readParticipantCookie(cookieName) === value || saved;
+    } catch (error) {
+      console.warn("The student identity could not be saved in a browser cookie.", error);
+    }
+    if (!saved) throw new Error("This browser could not save your presentation identity. Enable browser storage and try again.");
+  }
+
+  function readParticipantCookie(cookieName) {
+    const cookie = document.cookie.split("; ").find((item) => item.startsWith(`${cookieName}=`));
+    if (!cookie) return "";
+    try {
+      return decodeURIComponent(cookie.slice(cookieName.length + 1));
+    } catch {
+      return "";
+    }
+  }
+
   function getParticipantId() {
-    const key = `akademi-presentation-participant-${token}`;
     const createId = () => {
       const cryptoApi = window.crypto;
       if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
@@ -662,25 +748,15 @@
       const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
       return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     };
-    try {
-      const stored = window.sessionStorage.getItem(key);
-      if (stored && /^[a-f0-9-]{36}$/i.test(stored)) return stored;
-      const created = createId();
-      window.sessionStorage.setItem(key, created);
-      return created;
-    } catch (error) {
-      console.warn("A temporary student response identity could not be saved.", error);
-      return createId();
-    }
+    const stored = readParticipantValue("participant");
+    if (stored && /^[a-f0-9-]{36}$/i.test(stored)) return stored;
+    const created = createId();
+    saveParticipantValue("participant", created);
+    return created;
   }
 
   function storedParticipantName() {
-    try {
-      return window.sessionStorage.getItem(`akademi-presentation-name-${token}`) || "";
-    } catch (error) {
-      console.warn("The student name could not be restored from this browser session.", error);
-      return "";
-    }
+    return readParticipantValue("name");
   }
 
   if (!/^[a-fA-F0-9]{64}$/.test(token)) {
@@ -703,6 +779,9 @@
     joinGate.hidden = true;
     experience.hidden = false;
     if (latestState) renderState(latestState);
+    void sendPresence();
+    if (presenceTimer !== null) window.clearInterval(presenceTimer);
+    presenceTimer = window.setInterval(() => void sendPresence(), 20_000);
     void poll();
   };
   if (participantName) startFollowing();
@@ -717,9 +796,10 @@
     joinName.setCustomValidity("");
     participantName = name;
     try {
-      window.sessionStorage.setItem(`akademi-presentation-name-${token}`, participantName);
+      saveParticipantValue("name", participantName);
     } catch (error) {
-      console.warn("The student name could not be saved for this browser session.", error);
+      status.textContent = error instanceof Error ? error.message : "Your name could not be saved. Enable browser storage and try again.";
+      return;
     }
     startFollowing();
   });
@@ -754,6 +834,7 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && !stopped) {
       if (timer !== null) window.clearTimeout(timer);
+      void sendPresence();
       void poll();
     }
   });

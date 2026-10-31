@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Akademi\Services;
 
 use Akademi\Database\Connection;
+use Akademi\Security\SecretCipher;
 use PDO;
 use RuntimeException;
 
@@ -55,12 +56,13 @@ final class PresentationSimulationService
         $token = bin2hex(random_bytes(32));
         $statement = Connection::get()->prepare(
             'INSERT INTO presentation_simulations
-             (user_id, share_token_hash, title, presentation_data, reveal_mode, reveal_interval_seconds, expires_at)
-             VALUES (:user_id, :token_hash, :title, :presentation_data, :reveal_mode, :reveal_interval, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 12 HOUR))'
+             (user_id, share_token_hash, share_token_encrypted, title, presentation_data, reveal_mode, reveal_interval_seconds, expires_at)
+             VALUES (:user_id, :token_hash, :token_encrypted, :title, :presentation_data, :reveal_mode, :reveal_interval, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 12 HOUR))'
         );
         $statement->execute([
             'user_id' => $userId,
             'token_hash' => hash('sha256', $token, true),
+            'token_encrypted' => SecretCipher::encrypt($token, 'presentation-share-token-v1'),
             'title' => $title,
             'presentation_data' => $encodedPresentation,
             'reveal_mode' => $revealMode,
@@ -253,7 +255,7 @@ final class PresentationSimulationService
     {
         $statement = Connection::get()->prepare(
             'SELECT id, title, presentation_data, active_slide, status, reveal_mode, reveal_step,
-                    reveal_interval_seconds, annotation_data, pointer_data, timer_ends_at,
+                    reveal_interval_seconds, annotation_data, pointer_data, timer_ends_at, share_token_encrypted,
                     timer_duration_seconds, active_poll, expires_at
              FROM presentation_simulations
              WHERE id = :id AND user_id = :user_id LIMIT 1'
@@ -263,13 +265,83 @@ final class PresentationSimulationService
         if (!$row) {
             throw new RuntimeException('The live presentation was not found.', 404);
         }
-        return $this->stateFromRow($row, false);
+        $state = $this->stateFromRow($row, false);
+        $state['student_url'] = $row['share_token_encrypted'] === null
+            ? null
+            : app_url('presentation/follow?token=' . rawurlencode(
+                SecretCipher::decrypt((string)$row['share_token_encrypted'], 'presentation-share-token-v1')
+            ));
+        return $state;
+    }
+
+    public function studentLink(int $userId, int $simulationId, mixed $existingToken = null): array
+    {
+        $statement = Connection::get()->prepare(
+            'SELECT share_token_hash, share_token_encrypted
+             FROM presentation_simulations WHERE id = :id AND user_id = :user_id LIMIT 1'
+        );
+        $statement->execute(['id' => $simulationId, 'user_id' => $userId]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            throw new RuntimeException('The live presentation was not found.', 404);
+        }
+        if ($row['share_token_encrypted'] !== null) {
+            $token = SecretCipher::decrypt((string)$row['share_token_encrypted'], 'presentation-share-token-v1');
+        } elseif (is_string($existingToken) && preg_match('/^[a-f0-9]{64}$/iD', $existingToken)) {
+            $tokenHash = hash('sha256', strtolower($existingToken), true);
+            if (!hash_equals((string)$row['share_token_hash'], $tokenHash)) {
+                throw new RuntimeException('The saved student link no longer matches this presentation. A new link will be created.', 409);
+            }
+            $token = strtolower($existingToken);
+            $save = Connection::get()->prepare(
+                'UPDATE presentation_simulations SET share_token_encrypted = :encrypted
+                 WHERE id = :id AND user_id = :user_id AND share_token_encrypted IS NULL'
+            );
+            $save->execute([
+                'encrypted' => SecretCipher::encrypt($token, 'presentation-share-token-v1'),
+                'id' => $simulationId,
+                'user_id' => $userId,
+            ]);
+            if ($save->rowCount() === 0) {
+                $statement->execute(['id' => $simulationId, 'user_id' => $userId]);
+                $savedRow = $statement->fetch(PDO::FETCH_ASSOC);
+                if (!is_array($savedRow) || $savedRow['share_token_encrypted'] === null) {
+                    throw new RuntimeException('The student presentation link could not be saved.', 500);
+                }
+                $token = SecretCipher::decrypt((string)$savedRow['share_token_encrypted'], 'presentation-share-token-v1');
+            }
+        } else {
+            $token = bin2hex(random_bytes(32));
+            $save = Connection::get()->prepare(
+                'UPDATE presentation_simulations
+                 SET share_token_hash = :token_hash, share_token_encrypted = :encrypted
+                 WHERE id = :id AND user_id = :user_id AND share_token_encrypted IS NULL'
+            );
+            $save->execute([
+                'token_hash' => hash('sha256', $token, true),
+                'encrypted' => SecretCipher::encrypt($token, 'presentation-share-token-v1'),
+                'id' => $simulationId,
+                'user_id' => $userId,
+            ]);
+            if ($save->rowCount() === 0) {
+                $statement->execute(['id' => $simulationId, 'user_id' => $userId]);
+                $savedRow = $statement->fetch(PDO::FETCH_ASSOC);
+                if (!is_array($savedRow) || $savedRow['share_token_encrypted'] === null) {
+                    throw new RuntimeException('The student presentation link could not be recovered.', 500);
+                }
+                $token = SecretCipher::decrypt((string)$savedRow['share_token_encrypted'], 'presentation-share-token-v1');
+            }
+        }
+        return ['url' => app_url('presentation/follow?token=' . rawurlencode($token))];
     }
 
     public function history(int $userId): array
     {
         $statement = Connection::get()->prepare(
-            'SELECT id, title, status, active_slide, presentation_data, created_at, updated_at, ended_at
+            'SELECT id, title,
+                    CASE WHEN status = \'active\' AND expires_at <= UTC_TIMESTAMP() THEN \'ended\' ELSE status END AS status,
+                    active_slide, presentation_data, created_at, updated_at,
+                    COALESCE(ended_at, CASE WHEN status = \'active\' AND expires_at <= UTC_TIMESTAMP() THEN expires_at END) AS ended_at
              FROM presentation_simulations WHERE user_id = :user_id
              ORDER BY COALESCE(ended_at, updated_at, created_at) DESC LIMIT 50'
         );
@@ -394,18 +466,33 @@ final class PresentationSimulationService
         if (!$lookup->fetchColumn()) {
             throw new RuntimeException('The student question was not found.', 404);
         }
-        $update = $pdo->prepare(
-            'UPDATE presentation_simulation_questions
-             SET teacher_feedback = :feedback, answered_at = UTC_TIMESTAMP()
-             WHERE id = :question_id AND simulation_id = :simulation_id'
-        );
-        $update->execute(['feedback' => $feedback, 'question_id' => $questionId, 'simulation_id' => $simulationId]);
-        $question = $pdo->prepare(
-            'SELECT id, participant_name, question, teacher_feedback, created_at, answered_at
-             FROM presentation_simulation_questions WHERE id = :id LIMIT 1'
-        );
-        $question->execute(['id' => $questionId]);
-        return ['question' => $this->formatQuestion($question->fetch(PDO::FETCH_ASSOC))];
+        $pdo->beginTransaction();
+        try {
+            $insertReply = $pdo->prepare(
+                'INSERT INTO presentation_simulation_question_replies (question_id, feedback)
+                 VALUES (:question_id, :feedback)'
+            );
+            $insertReply->execute(['question_id' => $questionId, 'feedback' => $feedback]);
+            $update = $pdo->prepare(
+                'UPDATE presentation_simulation_questions
+                 SET teacher_feedback = :feedback, answered_at = UTC_TIMESTAMP()
+                 WHERE id = :question_id AND simulation_id = :simulation_id'
+            );
+            $update->execute(['feedback' => $feedback, 'question_id' => $questionId, 'simulation_id' => $simulationId]);
+            $question = $pdo->prepare(
+                'SELECT id, participant_name, question, teacher_feedback, created_at, answered_at
+                 FROM presentation_simulation_questions WHERE id = :id LIMIT 1'
+            );
+            $question->execute(['id' => $questionId]);
+            $formattedQuestion = $this->formatQuestions([$question->fetch(PDO::FETCH_ASSOC)])[0];
+            $pdo->commit();
+            return ['question' => $formattedQuestion];
+        } catch (\Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
     }
 
     public function read(string $token, ?string $participantId = null): array
@@ -425,6 +512,37 @@ final class PresentationSimulationService
             ? hash('sha256', strtolower($participantId))
             : null;
         return $this->stateFromRow($row, true, $participantHash);
+    }
+
+    public function join(string $token, array $input): array
+    {
+        $participantId = strtolower(trim((string)($input['participant_id'] ?? '')));
+        if (!preg_match('/^[a-f0-9-]{36}$/D', $participantId)) {
+            throw new RuntimeException('Refresh the student presentation and try again.', 422);
+        }
+        $participantName = self::validateParticipantName($input['participant_name'] ?? null);
+        $statement = Connection::get()->prepare(
+            'SELECT id FROM presentation_simulations
+             WHERE share_token_hash = :token_hash AND status = \'active\' AND expires_at > UTC_TIMESTAMP()
+             LIMIT 1'
+        );
+        $statement->execute(['token_hash' => hash('sha256', $token, true)]);
+        $simulationId = $statement->fetchColumn();
+        if ($simulationId === false) {
+            throw new RuntimeException('This live presentation is no longer available.', 404);
+        }
+        $save = Connection::get()->prepare(
+            'INSERT INTO presentation_simulation_participants
+             (simulation_id, participant_hash, participant_name, joined_at, last_seen_at)
+             VALUES (:simulation_id, :participant_hash, :participant_name, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+             ON DUPLICATE KEY UPDATE participant_name = VALUES(participant_name), last_seen_at = UTC_TIMESTAMP()'
+        );
+        $save->execute([
+            'simulation_id' => (int)$simulationId,
+            'participant_hash' => hash('sha256', $participantId),
+            'participant_name' => $participantName,
+        ]);
+        return ['joined' => true];
     }
 
     public function interact(string $token, array $input): array
@@ -450,6 +568,17 @@ final class PresentationSimulationService
 
             $simulationId = (int)$simulation['id'];
             $participantHash = hash('sha256', $participantId);
+            $registerParticipant = $pdo->prepare(
+                'INSERT INTO presentation_simulation_participants
+                 (simulation_id, participant_hash, participant_name, joined_at, last_seen_at)
+                 VALUES (:simulation_id, :participant_hash, :participant_name, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+                 ON DUPLICATE KEY UPDATE participant_name = VALUES(participant_name), last_seen_at = UTC_TIMESTAMP()'
+            );
+            $registerParticipant->execute([
+                'simulation_id' => $simulationId,
+                'participant_hash' => $participantHash,
+                'participant_name' => $participantName,
+            ]);
             $type = (string)($input['type'] ?? '');
             if ($type === 'poll') {
                 $poll = $simulation['active_poll'] === null
@@ -559,6 +688,7 @@ final class PresentationSimulationService
             unset($slide['presenter_notes'], $slide['speaker_notes'], $slide['notes']);
         }
         $reactionCounts = $this->reactionCounts((int)$row['id']);
+        $participants = $forStudent ? [] : $this->participantsForSimulation((int)$row['id']);
         return [
             'id' => (int)$row['id'],
             'title' => (string)$row['title'],
@@ -582,6 +712,8 @@ final class PresentationSimulationService
             'reaction_counts' => $reactionCounts,
             'reaction_responses' => $forStudent ? [] : $this->reactionRespondents((int)$row['id']),
             'own_poll_answers' => $forStudent ? $this->ownPollAnswers((int)$row['id'], $participantHash) : [],
+            'participants' => $participants,
+            'participant_count' => count($participants),
             'questions' => $forStudent
                 ? $this->questionsForParticipant((int)$row['id'], $participantHash)
                 : $this->questionsForSimulation((int)$row['id'], true),
@@ -647,7 +779,7 @@ final class PresentationSimulationService
              FROM presentation_simulation_questions WHERE simulation_id = :simulation_id ORDER BY created_at DESC' . $limit
         );
         $statement->execute(['simulation_id' => $simulationId]);
-        $questions = array_map(fn(array $row): array => $this->formatQuestion($row), $statement->fetchAll(PDO::FETCH_ASSOC));
+        $questions = $this->formatQuestions($statement->fetchAll(PDO::FETCH_ASSOC));
         return array_reverse($questions);
     }
 
@@ -663,32 +795,92 @@ final class PresentationSimulationService
              ORDER BY created_at'
         );
         $statement->execute(['simulation_id' => $simulationId, 'participant_hash' => $participantHash]);
-        return array_map(fn(array $row): array => $this->formatQuestion($row), $statement->fetchAll(PDO::FETCH_ASSOC));
+        return $this->formatQuestions($statement->fetchAll(PDO::FETCH_ASSOC));
     }
 
-    private function formatQuestion(array $row): array
+    private function formatQuestions(array $rows): array
     {
-        return [
+        if ($rows === []) {
+            return [];
+        }
+        $questions = array_map(static fn(array $row): array => [
             'id' => (int)$row['id'],
             'participant_name' => (string)$row['participant_name'],
             'question' => (string)$row['question'],
             'teacher_feedback' => $row['teacher_feedback'] === null ? null : (string)$row['teacher_feedback'],
+            'teacher_replies' => [],
             'created_at' => self::isoDate($row['created_at']),
             'answered_at' => $row['answered_at'] === null ? null : self::isoDate($row['answered_at']),
-        ];
+        ], $rows);
+        $ids = array_column($questions, 'id');
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $statement = Connection::get()->prepare(
+            "SELECT id, question_id, feedback, created_at
+             FROM presentation_simulation_question_replies
+             WHERE question_id IN ($placeholders)
+             ORDER BY question_id, created_at, id"
+        );
+        $statement->execute($ids);
+        $repliesByQuestion = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $reply) {
+            $repliesByQuestion[(int)$reply['question_id']][] = [
+                'id' => (int)$reply['id'],
+                'feedback' => (string)$reply['feedback'],
+                'created_at' => self::isoDate($reply['created_at']),
+            ];
+        }
+        foreach ($questions as &$question) {
+            $question['teacher_replies'] = $repliesByQuestion[$question['id']] ?? [];
+            if ($question['teacher_replies'] === [] && $question['teacher_feedback'] !== null) {
+                $question['teacher_replies'][] = [
+                    'id' => 0,
+                    'feedback' => $question['teacher_feedback'],
+                    'created_at' => $question['answered_at'] ?? $question['created_at'],
+                ];
+            }
+            if ($question['teacher_replies'] !== []) {
+                $lastReply = $question['teacher_replies'][array_key_last($question['teacher_replies'])];
+                $question['teacher_feedback'] = $lastReply['feedback'];
+            }
+        }
+        unset($question);
+        return $questions;
     }
 
     private function participantCount(int $simulationId): int
     {
         $statement = Connection::get()->prepare(
             'SELECT COUNT(DISTINCT participant_hash) FROM (
+                SELECT participant_hash FROM presentation_simulation_participants WHERE simulation_id = :participant_session
+                UNION
                 SELECT participant_hash FROM presentation_simulation_interactions WHERE simulation_id = :interaction_session
                 UNION
                 SELECT participant_hash FROM presentation_simulation_questions WHERE simulation_id = :question_session
              ) AS participants'
         );
-        $statement->execute(['interaction_session' => $simulationId, 'question_session' => $simulationId]);
+        $statement->execute([
+            'participant_session' => $simulationId,
+            'interaction_session' => $simulationId,
+            'question_session' => $simulationId,
+        ]);
         return (int)$statement->fetchColumn();
+    }
+
+    private function participantsForSimulation(int $simulationId): array
+    {
+        $statement = Connection::get()->prepare(
+            'SELECT participant_name, joined_at,
+                    last_seen_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 SECOND) AS online
+             FROM presentation_simulation_participants
+             WHERE simulation_id = :simulation_id
+             ORDER BY joined_at, participant_name'
+        );
+        $statement->execute(['simulation_id' => $simulationId]);
+        return array_map(static fn(array $row): array => [
+            'name' => (string)$row['participant_name'],
+            'joined_at' => self::isoDate($row['joined_at']),
+            'online' => (bool)$row['online'],
+        ], $statement->fetchAll(PDO::FETCH_ASSOC));
     }
 
     private static function validateParticipantName(mixed $value): string

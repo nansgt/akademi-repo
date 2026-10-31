@@ -197,6 +197,9 @@ try {
             isset($_GET['participant_id']) ? (string)$_GET['participant_id'] : null
         ));
     }
+    if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})/join$#D', $path, $matches) && $method === 'POST') {
+        json_response((new \Akademi\Services\PresentationSimulationService())->join($matches[1], request_json()));
+    }
     if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})/interaction$#D', $path, $matches) && $method === 'POST') {
         json_response((new \Akademi\Services\PresentationSimulationService())->interact($matches[1], request_json()));
     }
@@ -522,6 +525,17 @@ try {
         json_response((new \Akademi\Services\PresentationSimulationService())->ownerState(
             (int)$user['id'],
             (int)$matches[1]
+        ));
+    }
+    if (preg_match('#^/api/teacher/presentation-simulations/([1-9][0-9]*)/student-link$#D', $path, $matches) && $method === 'POST') {
+        Csrf::verifyRequest();
+        $user = require_user($auth);
+        $auth->requireRole($user, 'teacher');
+        $input = request_json();
+        json_response((new \Akademi\Services\PresentationSimulationService())->studentLink(
+            (int)$user['id'],
+            (int)$matches[1],
+            $input['token'] ?? null
         ));
     }
     if (preg_match('#^/api/teacher/presentation-simulations/([1-9][0-9]*)/history$#D', $path, $matches) && $method === 'GET') {
