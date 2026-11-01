@@ -71,7 +71,7 @@ final class PresentationSimulationService
         $id = (int)Connection::get()->lastInsertId();
         return [
             'id' => $id,
-            'url' => app_url('presentation/follow?token=' . rawurlencode($token)),
+            'url' => self::studentUrl($token),
             'expires_at' => gmdate('c', time() + 12 * 60 * 60),
         ];
     }
@@ -268,9 +268,9 @@ final class PresentationSimulationService
         $state = $this->stateFromRow($row, false);
         $state['student_url'] = $row['share_token_encrypted'] === null
             ? null
-            : app_url('presentation/follow?token=' . rawurlencode(
+            : self::studentUrl(
                 SecretCipher::decrypt((string)$row['share_token_encrypted'], 'presentation-share-token-v1')
-            ));
+            );
         return $state;
     }
 
@@ -332,7 +332,12 @@ final class PresentationSimulationService
                 $token = SecretCipher::decrypt((string)$savedRow['share_token_encrypted'], 'presentation-share-token-v1');
             }
         }
-        return ['url' => app_url('presentation/follow?token=' . rawurlencode($token))];
+        return ['url' => self::studentUrl($token)];
+    }
+
+    private static function studentUrl(string $token): string
+    {
+        return app_url('presentation/follow?token=' . rawurlencode($token));
     }
 
     public function history(int $userId): array

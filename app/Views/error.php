@@ -68,6 +68,10 @@ $statusCode = (int)$statusCode;
   <meta name="app-base-path" content="<?= e(app_base_path()) ?>">
   <link rel="icon" href="<?= e(app_url('assets/icon.svg')) ?>" type="image/svg+xml">
   <link rel="stylesheet" href="<?= e(app_url('assets/error-page.css?v=1')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/fontawesome.min.css')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/solid.min.css')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/action-icons.css')) ?>">
+  <script src="<?= e(app_url('assets/action-icons.js?v=1')) ?>" defer></script>
   <script src="<?= e(app_url('assets/error-page.js?v=1')) ?>" defer></script>
   <title><?= e($copy['eyebrow']) ?> · Akademi</title>
 </head>

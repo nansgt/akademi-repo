@@ -801,7 +801,11 @@ try {
     if ($path === '/api/ai/status' && $method === 'GET') {
         $user = require_user($auth);
         $auth->requireRole($user, 'teacher');
-        json_response(['ai_provider' => (new AiProviderService())->publicConfig()]);
+        json_response([
+            'ai_provider' => (new AiProviderService())->publicConfig(),
+            'credits' => (new AiCreditService())->balance((int)$user['id']),
+            'quota_exempt' => in_array('superadmin', $user['roles'], true),
+        ]);
     }
 
     if ($path === '/api/ai/generate' && $method === 'POST') {

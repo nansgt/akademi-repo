@@ -9,6 +9,21 @@
     slides: "Presentation outline"
   };
   const LIVE_PRESENTATION_STORAGE_KEY = "akademi-active-live-presentation";
+  function currentStudentPresentationUrl(value) {
+    let token;
+    try {
+      token = new URL(value, window.location.href).searchParams.get("token");
+    } catch (error) {
+      throw new Error("The student presentation link is invalid. Resume the live presentation to refresh it.");
+    }
+    if (!token || !/^[a-f0-9]{64}$/i.test(token)) {
+      throw new Error("The student presentation link is invalid. Resume the live presentation to refresh it.");
+    }
+    const basePath = document.querySelector('meta[name="app-base-path"]')?.content || "";
+    const link = new URL(`${basePath}/presentation/follow`, window.location.origin);
+    link.searchParams.set("token", token);
+    return link.href;
+  }
   function saveActiveLivePresentation(session) {
     try {
       sessionStorage.setItem(LIVE_PRESENTATION_STORAGE_KEY, JSON.stringify(session));
@@ -1856,9 +1871,13 @@
     if (!form || (type !== "lesson" && !form.reportValidity())) return;
     if (type === "lesson" && !validateLessonForm(form)) return;
     if (type === "assessment" && !validateAssessmentSelections()) return;
+    let aiStatus = null;
     try {
-      const { ai_provider: providerStatus } = await workspaceRequest("/api/ai/status");
+      aiStatus = await workspaceRequest("/api/ai/status");
+      const providerStatus = aiStatus.ai_provider;
       aiProviderConfigured = Boolean(providerStatus?.configured && providerStatus?.api_key_usable);
+      credits = aiStatus.credits || null;
+      updateCreditDisplay();
       if (!aiProviderConfigured) {
         const message = providerStatus?.api_key_configured
           ? "The saved AI provider key cannot be decrypted with this server’s current APP_KEY. A Super Admin can replace it with a new provider key in Platform settings; restoring the previous APP_KEY is not required."
@@ -2013,15 +2032,30 @@
     }
     button.disabled = true;
     const originalLabel = button.textContent;
+    let generatedSlides = null;
+    let generationStage = "preparing the AI request";
     try {
       let generationInputs = [input];
       if (type === "assessment") {
         const combinations = input.combinations;
+        generationInputs = combinations;
+      }
+      const creditCost = Number(aiStatus?.credits?.costs?.[type]);
+      if (!Number.isInteger(creditCost) || creditCost < 1 || !Number.isInteger(aiStatus?.credits?.remaining)) {
+        showToast("Your AI credit balance could not be verified. Refresh the workspace and try again.", "error");
+        return;
+      }
+      const requiredCredits = creditCost * generationInputs.length;
+      if (!aiStatus.quota_exempt && aiStatus.credits.remaining < requiredCredits) {
+        showToast(`This request needs ${requiredCredits} AI credits, but you have ${aiStatus.credits.remaining} remaining this month.`, "error");
+        return;
+      }
+      if (type === "assessment") {
+        const combinations = generationInputs;
         if (combinations.length > 1 && !(await window.akademiAlert.confirm(
-          `Generate ${combinations.length} separate assessment drafts? Each combination makes a separate AI request and uses one credit.`,
+          `Generate ${combinations.length} separate assessment drafts? Each combination uses ${creditCost} AI credits (${requiredCredits} total).`,
           { title: "Generate assessment combinations", confirmText: `Generate ${combinations.length}` }
         ))) return;
-        generationInputs = combinations;
       }
       planningDialogs[type]?.close();
       for (const [index, generationInput] of generationInputs.entries()) {
@@ -2029,6 +2063,7 @@
           ? `Generating ${index + 1} of ${generationInputs.length}…`
           : "Generating…";
         const { combination_index: combinationIndex, combination_count: combinationCount, ...requestInput } = generationInput;
+        generationStage = "sending the request to the AI provider";
         const response = await fetch(`${appBase}/api/ai/generate`, {
           method: "POST",
           credentials: "same-origin",
@@ -2039,16 +2074,22 @@
           },
           body: JSON.stringify(requestInput)
         });
+        generationStage = "reading the AI response";
         const result = await response.json();
         if (!response.ok) {
           const completed = type === "assessment" ? generatedAssessmentVariants.length : 0;
           const prefix = completed ? `${completed} of ${generationInputs.length} combinations were generated. ` : "";
           throw new Error(prefix + (result.error || "AI generation failed."));
         }
+        if (type === "slides" && Array.isArray(result.draft?.slides)) {
+          generatedSlides = { input: requestInput, draft: result.draft };
+        }
+        generationStage = "processing the generated response";
         credits = result.credits || credits;
         updateCreditDisplay();
         markSynced();
         if (type === "slides") {
+          generationStage = "searching for slide images";
           button.textContent = "Finding relevant images…";
           const imageResult = await enrichPresentationImages(result.draft.slides || [], requestInput.subject || "");
           const imageNotices = [];
@@ -2060,6 +2101,7 @@
           }
           result.draft.presentation_image_warning = imageNotices.join(" ");
         }
+        generationStage = "rendering the generated content";
         await renderAiDraft(type, requestInput, result.draft, {
           append: type === "assessment" && index > 0,
           combinationIndex,
@@ -2072,12 +2114,134 @@
         document.getElementById("lesson-output").scrollIntoView({ behavior: "smooth", block: "start" });
       }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "AI generation failed.", "error");
+      console.error(`AI ${type} generation failed while ${generationStage}.`, error);
+      if (type === "slides" && generatedSlides) {
+        try {
+          renderPresentationTextFallback(generatedSlides.input, generatedSlides.draft);
+          planningDialogs.slides?.close();
+          showToast("Your slides were generated. This browser could not render the full preview, so a text version is shown instead.", "info");
+        } catch (fallbackError) {
+          console.error("The generated slides could not be displayed in fallback mode.", fallbackError);
+          showToast(`Slides were generated but could not be displayed: ${fallbackError instanceof Error ? fallbackError.message : "unknown display error"}`, "error");
+        }
+      } else {
+        const detail = error instanceof Error ? error.message : "Unknown error.";
+        showToast(type === "slides"
+          ? `Slide generation failed while ${generationStage}: ${detail}`
+          : detail, "error");
+      }
     } finally {
       button.disabled = false;
       button.textContent = originalLabel;
     }
   });
+
+  function renderPresentationTextFallback(input, draft) {
+    const region = document.getElementById("slides-output");
+    const title = String(draft.title || input.topic || input.subject || "Presentation").trim();
+    const slides = draft.slides;
+    if (!Array.isArray(slides) || !slides.length) {
+      throw new Error("The generated response did not contain any slides.");
+    }
+    const data = {
+      ...input,
+      title,
+      subject: input.subject || "",
+      year_group: input.year_group || "",
+      template: input.presentation_template || "lesson",
+      visual_theme: input.presentation_visual_theme || "modern",
+      number_of_slides: slides.length,
+      slides
+    };
+    const card = document.createElement("article");
+    card.className = "output-card";
+    const heading = document.createElement("div");
+    heading.className = "output-heading";
+    const headingCopy = document.createElement("div");
+    const headingTitle = document.createElement("h2");
+    headingTitle.textContent = title;
+    const headingNote = document.createElement("p");
+    headingNote.textContent = "Generated slide text is available below. Visual preview could not be rendered in this browser.";
+    headingCopy.append(headingTitle, headingNote);
+    heading.append(headingCopy);
+    const actions = document.createElement("div");
+    actions.className = "output-actions";
+    const addAction = (label, callback) => {
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "small-button";
+      action.textContent = label;
+      action.addEventListener("click", callback);
+      actions.append(action);
+      return action;
+    };
+    addAction("Present", () => {
+      try {
+        openPresentationViewer(data, title);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "The presentation could not be opened.", "error");
+      }
+    });
+    for (const [format, label] of [["pdf", "Download PDF"], ["pptx", "Download PowerPoint"]]) {
+      addAction(label, () => {
+        try {
+          if (!window.akademiAssessmentExport) throw new Error("Presentation export is unavailable. Refresh and try again.");
+          window.akademiAssessmentExport.downloadDocument(
+            { type: "slides", title, data, html: card.outerHTML },
+            format
+          );
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : `The presentation could not be exported as ${format.toUpperCase()}.`, "error");
+        }
+      });
+    }
+    const saveButton = addAction("Save presentation", async () => {
+      saveButton.disabled = true;
+      try {
+        await saveDocument("slides", `${title} · presentation outline`, data, card.outerHTML);
+        saveButton.textContent = "Saved";
+        showToast("Presentation saved to your workspace.");
+      } catch (error) {
+        saveButton.disabled = false;
+        showToast(error instanceof Error ? error.message : "The presentation could not be saved.", "error");
+      }
+    });
+    heading.append(actions);
+    const body = document.createElement("div");
+    body.className = "output-body";
+    const warning = document.createElement("p");
+    warning.className = "notice notice-amber";
+    warning.textContent = "Your slide content is safe. Refresh the page before editing visuals or presenting the full design.";
+    body.append(warning);
+    slides.forEach((slide, index) => {
+      const section = document.createElement("section");
+      section.className = "presentation-text-fallback";
+      const slideTitle = document.createElement("h3");
+      slideTitle.textContent = `Slide ${index + 1}: ${String(slide?.title || "Untitled slide")}`;
+      section.append(slideTitle);
+      const points = document.createElement("ul");
+      (Array.isArray(slide?.key_points) ? slide.key_points : []).forEach((point) => {
+        if (typeof point !== "string" || !point.trim()) return;
+        const item = document.createElement("li");
+        item.textContent = point;
+        points.append(item);
+      });
+      if (points.childElementCount) section.append(points);
+      if (typeof slide?.activity === "string" && slide.activity.trim()) {
+        const activity = document.createElement("p");
+        activity.textContent = `Classroom activity: ${slide.activity}`;
+        section.append(activity);
+      }
+      body.append(section);
+    });
+    card.append(heading, body);
+    region.replaceChildren(card);
+    try {
+      region.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      console.warn("The text-only slide preview could not be scrolled into view.", error);
+    }
+  }
 
   async function renderAiDraft(type, input, draft, options = {}) {
     const sourceList = (draft.curriculum_sources || []).map((source) => {
@@ -2452,23 +2616,50 @@
     const formatSection = formatSourceList
       ? `<div class="document-section"><h3>Verified planning template checked</h3><ul class="ai-citations">${formatSourceList}</ul></div>`
       : `<div class="document-section"><h3>Planning format</h3><p>No administrator-verified template was found. This is an editable AI draft and is not represented as an officially approved format.</p></div>`;
-    const contentHtml = type === "lesson"
-    ? renderLessonTemplate(input, draft, formatSection, sourceList)
-    : renderAiContent(type, draft, type === "scheme");
-    const documentBody = type === "lesson"
-      ? contentHtml
-      : `${contentHtml}${formatSection}<div class="document-section"><h3>Curriculum sources checked</h3>${sourceList ? `<ul class="ai-citations">${sourceList}</ul>` : "<p>No citations were returned.</p>"}</div>`;
-    const html = documentFrame(
-      draft.title,
-      `${TYPE_LABELS[type].toUpperCase()} · AI TEACHER-REVIEW DRAFT`,
-      metadata,
-      documentBody,
-      type === "lesson" || type === "scheme" ? "" : "AI output is a draft, not an official NaCCA resource. Check every claim, activity, answer and curriculum reference against the cited source before classroom use.",
-      type === "lesson"
-    );
     const region = document.getElementById(`${type}-output`);
-    region.innerHTML = html;
-    region.scrollIntoView({ behavior: "smooth", block: "start" });
+    let html;
+    try {
+      const contentHtml = type === "lesson"
+        ? renderLessonTemplate(input, draft, formatSection, sourceList)
+        : renderAiContent(type, draft, type === "scheme");
+      const documentBody = type === "lesson"
+        ? contentHtml
+        : `${contentHtml}${formatSection}<div class="document-section"><h3>Curriculum sources checked</h3>${sourceList ? `<ul class="ai-citations">${sourceList}</ul>` : "<p>No citations were returned.</p>"}</div>`;
+      html = documentFrame(
+        draft.title,
+        `${TYPE_LABELS[type].toUpperCase()} · AI TEACHER-REVIEW DRAFT`,
+        metadata,
+        documentBody,
+        type === "lesson" || type === "scheme" ? "" : "AI output is a draft, not an official NaCCA resource. Check every claim, activity, answer and curriculum reference against the cited source before classroom use.",
+        type === "lesson"
+      );
+      region.innerHTML = html;
+    } catch (error) {
+      if (type !== "slides" || !Array.isArray(draft.slides)) throw error;
+      console.error("Generated slide visuals could not be rendered; displaying the slide text instead.", error);
+      const slidesText = draft.slides.map((slide, index) => {
+        const points = (Array.isArray(slide.key_points) ? slide.key_points : [])
+          .filter((point) => typeof point === "string" && point.trim())
+          .map((point) => `<li>${escapeHtml(point)}</li>`).join("");
+        return `<section class="presentation-text-fallback"><h4>Slide ${index + 1}: ${escapeHtml(slide.title || "Untitled slide")}</h4>${points ? `<ul>${points}</ul>` : ""}${slide.activity ? `<p><strong>Classroom activity:</strong> ${escapeHtml(slide.activity)}</p>` : ""}</section>`;
+      }).join("");
+      const fallbackBody = `<div class="document-section"><h3>Presentation outline</h3>${slidesText}</div>${formatSection}<div class="document-section"><h3>Curriculum sources checked</h3>${sourceList ? `<ul class="ai-citations">${sourceList}</ul>` : "<p>No citations were returned.</p>"}</div>`;
+      html = documentFrame(
+        draft.title,
+        `${TYPE_LABELS.slides.toUpperCase()} · AI TEACHER-REVIEW DRAFT`,
+        metadata,
+        fallbackBody,
+        "The slide content was generated, but this browser could not render one or more visuals. The text outline is available; review the visual JSON in Edit before presenting.",
+        false
+      );
+      region.innerHTML = html;
+    }
+    try {
+      region.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      if (type !== "slides") throw error;
+      console.warn("The generated slides could not be scrolled into view in this browser.", error);
+    }
     const outputData = {
       type,
       title: draft.title,
@@ -6585,13 +6776,6 @@
       </header>
       <div class="presentation-live-sharing" data-presentation-live-sharing hidden>
         <div class="presentation-live-controls" data-presentation-live-controls></div>
-        <section class="presentation-feedback-card presentation-participants" aria-label="Students in this presentation">
-          <h3><i class="fa-solid fa-users"></i> Students joined <span class="presentation-live-count" data-presentation-participant-count>0</span></h3>
-          <p class="presentation-participant-online" data-presentation-participant-online>0 online</p>
-          <ul class="presentation-participant-list" data-presentation-participant-list>
-            <li class="presentation-participant-empty">No students have joined yet.</li>
-          </ul>
-        </section>
         <p class="presentation-join-notice" data-presentation-join-notice role="status" aria-live="polite"></p>
         <section class="presentation-feedback-card presentation-pace-card" data-presentation-pace-summary aria-label="Class pace responses">
           <h3><i class="fa-solid fa-gauge-high"></i> Class pace <span class="presentation-live-count" data-presentation-feedback-count="pace" hidden></span></h3>
@@ -6607,6 +6791,20 @@
           <div class="presentation-question-feedback-content" data-presentation-question-feedback></div>
         </section>
       </div>
+      <dialog class="presentation-participants-dialog" data-presentation-participants-dialog aria-labelledby="presentation-participants-title">
+        <section class="presentation-feedback-card presentation-participants" aria-label="Students in this presentation">
+          <header class="presentation-participants-heading">
+            <div>
+              <h2 id="presentation-participants-title"><i class="fa-solid fa-users" aria-hidden="true"></i> Students joined <span class="presentation-live-count" data-presentation-participant-count>0</span></h2>
+              <p class="presentation-participant-online" data-presentation-participant-online>0 online</p>
+            </div>
+            <button type="button" class="presentation-icon-button" data-presentation-participants-close aria-label="Close student list" title="Close student list"><i class="fa-solid fa-xmark" aria-hidden="true"></i><small>Close</small></button>
+          </header>
+          <ul class="presentation-participant-list" data-presentation-participant-list>
+            <li class="presentation-participant-empty">No students have joined yet.</li>
+          </ul>
+        </section>
+      </dialog>
       <div class="presentation-viewer-progress" role="progressbar" aria-label="Slide progress" aria-valuemin="1" aria-valuemax="${slides.length}" aria-valuenow="1"><span data-presentation-progress></span></div>
       <div class="presentation-viewer-layout">
         <div class="presentation-viewer-stage" data-presentation-stage></div>
@@ -6648,6 +6846,9 @@
     const participantCount = dialog.querySelector("[data-presentation-participant-count]");
     const participantOnline = dialog.querySelector("[data-presentation-participant-online]");
     const participantList = dialog.querySelector("[data-presentation-participant-list]");
+    const participantsDialog = dialog.querySelector("[data-presentation-participants-dialog]");
+    const participantsClose = dialog.querySelector("[data-presentation-participants-close]");
+    participantsClose.addEventListener("click", () => participantsDialog.close());
     const participantJoinNotice = dialog.querySelector("[data-presentation-join-notice]");
     const reactionNotice = dialog.querySelector("[data-presentation-reaction-notice]");
     let activeSlide = 0;
@@ -6829,8 +7030,15 @@
         const value = document.createElement("strong");
         value.textContent = String(Number(counts[key] || 0));
         const respondents = document.createElement("small");
-        respondents.textContent = responses.filter((response) => response.reaction === key)
+        const respondentNames = responses.filter((response) => response.reaction === key)
           .map((response) => response.participant_name).join(", ");
+        respondents.textContent = respondentNames;
+        if (respondentNames) {
+          item.title = `${label}: ${respondentNames}`;
+          item.setAttribute("aria-label", `${label}: ${respondentNames}`);
+        } else {
+          item.setAttribute("aria-label", `${label}: ${value.textContent}`);
+        }
         item.append(name, value, respondents);
         paceItems.append(item);
       });
@@ -6880,6 +7088,10 @@
       seenParticipantKeys = new Set(studentKeys);
       participantCount.textContent = String(students.length);
       participantOnline.textContent = `${students.filter((student) => student.online).length} online`;
+      const participantButtonCount = liveControls.querySelector("[data-presentation-participant-button-count]");
+      if (participantButtonCount) participantButtonCount.textContent = students.length > 99 ? "99+" : String(students.length);
+      const participantButton = liveControls.querySelector("[data-presentation-participants-open]");
+      if (participantButton) participantButton.setAttribute("aria-label", `View students, ${students.length} joined`);
       participantList.replaceChildren();
       if (!students.length) {
         const empty = document.createElement("li");
@@ -7553,7 +7765,7 @@
           );
           liveState.student_url = linkResult.url;
         }
-        result.url = liveState.student_url;
+        result.url = currentStudentPresentationUrl(liveState.student_url);
         liveSession.url = result.url;
         saveActiveLivePresentation({
           id: liveSession.id,
@@ -7613,6 +7825,24 @@
         linkInput.setAttribute("aria-label", "Student presentation follow link");
         linkInput.value = result.url;
         linkInput.hidden = !result.url;
+        const participantsButton = document.createElement("button");
+        participantsButton.type = "button";
+        participantsButton.className = "presentation-icon-button";
+        participantsButton.setAttribute("data-presentation-participants-open", "");
+        const joinedStudentCount = Array.isArray(liveState?.participants) ? liveState.participants.length : 0;
+        participantsButton.setAttribute("aria-label", `View students, ${joinedStudentCount} joined`);
+        participantsButton.title = "View joined students";
+        participantsButton.innerHTML = `<i class="fa-solid fa-users" aria-hidden="true"></i><small>Students</small><span class="presentation-live-count" data-presentation-participant-button-count>${joinedStudentCount > 99 ? "99+" : joinedStudentCount}</span>`;
+        participantsButton.addEventListener("click", () => participantsDialog.showModal());
+        const openLink = document.createElement("a");
+        openLink.className = "presentation-icon-button";
+        openLink.href = result.url;
+        openLink.target = "_blank";
+        openLink.rel = "noopener noreferrer";
+        openLink.setAttribute("aria-label", "Open student presentation link in a new tab");
+        openLink.title = "Open student presentation link";
+        openLink.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i><small>Open</small>';
+        openLink.hidden = !result.url;
         const linkToggle = document.createElement("button");
         linkToggle.type = "button";
         linkToggle.className = "presentation-icon-button";
@@ -7668,7 +7898,7 @@
         liveStatus.className = "presentation-live-status";
         liveStatus.setAttribute("aria-live", "polite");
         liveStatus.textContent = "Students follow reveals, drawings, polls, reactions and the class timer. The secure link remains available until this session expires.";
-        liveControls.replaceChildren(linkLabel, linkInput, linkToggle, copyButton, endButton, copyFeedback, liveStatus);
+        liveControls.replaceChildren(linkLabel, linkInput, openLink, participantsButton, linkToggle, copyButton, endButton, copyFeedback, liveStatus);
         const visibilityButton = (key, label, icon, panel) => {
           const button = document.createElement("button");
           button.type = "button";
@@ -7783,6 +8013,7 @@
       if (event.target === dialog) void closeViewer();
     });
     dialog.addEventListener("close", () => {
+      if (participantsDialog.open) participantsDialog.close();
       if (ownerPollTimer !== null) window.clearTimeout(ownerPollTimer);
       if (presentationClock !== null) window.clearInterval(presentationClock);
       if (pointerUpdateTimer !== null) window.clearTimeout(pointerUpdateTimer);

@@ -10,7 +10,11 @@ declare(strict_types=1);
   <meta name="csrf-token" content="<?= e(\Akademi\Security\Csrf::token()) ?>">
   <meta name="robots" content="noindex,nofollow">
   <link rel="icon" href="<?= e(app_url('assets/icon.svg')) ?>" type="image/svg+xml">
-  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=149')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/fontawesome.min.css')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/solid.min.css')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/action-icons.css')) ?>">
+  <script src="<?= e(app_url('assets/action-icons.js?v=1')) ?>" defer></script>
+  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=150')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/auth.css?v=23')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/assessment-take.css?v=11')) ?>">
   <title>Online assessment · Akademi</title>

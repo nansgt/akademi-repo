@@ -23,6 +23,10 @@ $heading = $headings[$mode] ?? $headings['login'];
   <meta name="csrf-token" content="<?= e(\Akademi\Security\Csrf::token()) ?>">
   <meta name="csrf-endpoint" content="<?= e(app_base_path() . '/api/auth/csrf-token') ?>">
   <link rel="icon" href="<?= e(app_url('assets/icon.svg')) ?>" type="image/svg+xml">
+  <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/fontawesome.min.css')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/solid.min.css')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/action-icons.css')) ?>">
+  <script src="<?= e(app_url('assets/action-icons.js?v=1')) ?>" defer></script>
   <link rel="stylesheet" href="<?= e(app_url('assets/notifications.css?v=20')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/auth.css?v=23')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/appearance.css?v=5')) ?>">
