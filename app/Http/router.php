@@ -197,6 +197,12 @@ try {
             isset($_GET['participant_id']) ? (string)$_GET['participant_id'] : null
         ));
     }
+    if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})/messages$#D', $path, $matches) && $method === 'GET') {
+        json_response((new \Akademi\Services\PresentationSimulationService())->studentDirectMessages(
+            $matches[1],
+            (string)($_GET['participant_id'] ?? '')
+        ));
+    }
     if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})/join$#D', $path, $matches) && $method === 'POST') {
         json_response((new \Akademi\Services\PresentationSimulationService())->join($matches[1], request_json()));
     }
@@ -537,6 +543,24 @@ try {
             (int)$matches[1],
             $input['token'] ?? null
         ));
+    }
+    if (preg_match('#^/api/teacher/presentation-simulations/([1-9][0-9]*)/participants/([a-f0-9]{64})/messages$#D', $path, $matches)) {
+        $user = require_user($auth);
+        $auth->requireRole($user, 'teacher');
+        $service = new \Akademi\Services\PresentationSimulationService();
+        if ($method === 'GET') {
+            json_response($service->teacherDirectMessages((int)$user['id'], (int)$matches[1], $matches[2]));
+        }
+        if ($method === 'POST') {
+            Csrf::verifyRequest();
+            $input = request_json();
+            json_response($service->sendTeacherDirectMessage(
+                (int)$user['id'],
+                (int)$matches[1],
+                $matches[2],
+                $input['message'] ?? null
+            ));
+        }
     }
     if (preg_match('#^/api/teacher/presentation-simulations/([1-9][0-9]*)/history$#D', $path, $matches) && $method === 'GET') {
         $user = require_user($auth);

@@ -10,19 +10,28 @@
   const timerLabel = document.querySelector("[data-follow-timer]");
   const progress = document.querySelector("[data-follow-progress]");
   const pollPanel = document.querySelector("[data-follow-poll]");
+  const pollDialog = document.querySelector('[data-follow-dialog="poll"]');
+  const pollDialogTrigger = document.querySelector('[data-follow-dialog-open="poll"]');
   const reactions = document.querySelector("[data-follow-reactions]");
-  const paceToggle = document.querySelector("[data-follow-pace-toggle]");
+  const paceCountBadge = document.querySelector("[data-follow-pace-count]");
+  const dialogTriggers = document.querySelectorAll("[data-follow-dialog-open]");
+  const dialogs = document.querySelectorAll("[data-follow-dialog]");
   const fullscreenButton = document.querySelector("[data-follow-fullscreen]");
   const joinGate = document.querySelector("[data-follow-join]");
   const experience = document.querySelector("[data-follow-experience]");
   const joinForm = document.querySelector("[data-follow-join-form]");
-  const questionPanel = document.querySelector("[data-follow-question-panel]");
   const questionForm = document.querySelector("[data-follow-question-form]");
   const questionList = document.querySelector("[data-follow-questions]");
   const questionCount = document.querySelector("[data-follow-question-count]");
+  const directForm = document.querySelector("[data-follow-direct-form]");
+  const directRecipient = document.querySelector("[data-follow-direct-recipient]");
+  const directMessages = document.querySelector("[data-follow-direct-messages]");
+  const directDialog = document.querySelector('[data-follow-dialog="direct"]');
+  const directStatus = document.querySelector("[data-follow-direct-status]");
   const themes = new Set(["modern", "editorial", "vibrant", "data", "minimal"]);
   let timer = null;
   let presenceTimer = null;
+  let directRefreshTimer = null;
   let countdownTimer = null;
   let lastSlideKey = "";
   let lastRevealRender = null;
@@ -39,6 +48,11 @@
   let participantId = "";
   let participantName = "";
   let lastQuestionsKey = "";
+  let lastDirectMessagesKey = "";
+  let lastDirectParticipantsKey = "";
+  let latestDirectParticipants = [];
+  let latestDirectMessages = [];
+  let directMessagesPending = false;
   const ownAnswers = new Map();
   const ownReactions = new Map();
   const reactionNames = {
@@ -48,6 +62,37 @@
     faster: "🚀 We can go faster"
   };
   const colors = new Set(["#e5484d", "#2f80ed", "#27ae60", "#f2c94c", "#ffffff"]);
+
+  dialogTriggers.forEach((trigger) => {
+    trigger.addEventListener("click", () => {
+      const dialog = document.querySelector(`[data-follow-dialog="${trigger.dataset.followDialogOpen}"]`);
+      if (!dialog || typeof dialog.showModal !== "function") {
+        status.textContent = "This browser does not support classroom panels.";
+        return;
+      }
+      try {
+        dialog.showModal();
+        if (trigger.dataset.followDialogOpen === "direct") {
+          void refreshDirectMessages();
+          if (directRefreshTimer === null) {
+            directRefreshTimer = window.setInterval(() => void refreshDirectMessages(), 3000);
+          }
+        }
+      } catch (error) {
+        status.textContent = error instanceof Error ? `The classroom panel could not be opened: ${error.message}` : "The classroom panel could not be opened.";
+      }
+    });
+  });
+  dialogs.forEach((dialog) => {
+    dialog.querySelector("[data-follow-dialog-close]")?.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+    directDialog.addEventListener("close", () => {
+      if (directRefreshTimer !== null) window.clearInterval(directRefreshTimer);
+      directRefreshTimer = null;
+    });
+  });
 
   const textElement = (tag, text, className = "") => {
     const element = document.createElement(tag);
@@ -307,7 +352,16 @@
       const color = colors[index % colors.length];
       if (item.points.length > 1) {
         const coordinates = item.points.map(([x, y]) => `${pointX(x)},${pointY(y)}`).join(" ");
-        add("polyline", { points: coordinates, pathLength: 1, class: "presentation-follow-chart-line", style: `--chart-color:${color}` });
+        add("polyline", {
+          points: coordinates,
+          fill: "none",
+          stroke: color,
+          "stroke-width": 4,
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round",
+          "vector-effect": "non-scaling-stroke",
+          class: "presentation-follow-chart-line"
+        });
       }
       item.points.forEach(([x, y]) => {
         add("circle", {
@@ -395,6 +449,8 @@
     pollPanel.replaceChildren();
     const selected = poll ? ownAnswers.get(poll.id) : undefined;
     pollPanel.hidden = !poll || selected !== undefined;
+    pollDialogTrigger.hidden = pollPanel.hidden;
+    if (pollPanel.hidden && pollDialog.open) pollDialog.close();
     if (!poll) return;
     pollPanel.append(textElement("h2", poll.question, "presentation-follow-poll-question"));
     const options = Array.isArray(poll.options) ? poll.options : [];
@@ -423,13 +479,11 @@
   }
 
   function renderReactions(counts = {}) {
-    reactions.replaceChildren(textElement("span", "How is the pace?", "presentation-follow-reaction-label"));
+    reactions.replaceChildren();
     const paceCount = Object.values(counts).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0);
-    const paceCountBadge = paceToggle.querySelector("[data-follow-pace-count]");
     if (paceCountBadge) {
       paceCountBadge.textContent = String(paceCount);
       paceCountBadge.hidden = paceCount === 0;
-      paceToggle.setAttribute("aria-label", `Show pace responses, ${paceCount} total`);
     }
     Object.entries(reactionNames).forEach(([reaction, label]) => {
       const total = Number(counts[reaction] || 0);
@@ -487,6 +541,64 @@
     });
   }
 
+  function renderDirectChat(participants = [], messages = []) {
+    const recipientKey = JSON.stringify(participants);
+    if (recipientKey !== lastDirectParticipantsKey) {
+      const selected = directRecipient.value || "teacher";
+      directRecipient.replaceChildren(...participants.map((participant) => {
+        const option = document.createElement("option");
+        option.value = String(participant.id);
+        option.textContent = `${participant.name}${participant.role === "student" ? " · online" : ""}`;
+        return option;
+      }));
+      if (participants.some((participant) => String(participant.id) === selected)) directRecipient.value = selected;
+      lastDirectParticipantsKey = recipientKey;
+      lastDirectMessagesKey = "";
+    }
+    const recipientId = directRecipient.value || "teacher";
+    const conversation = messages.filter((message) => String(message.peer_id) === recipientId);
+    const messagesKey = `${recipientId}:${JSON.stringify(conversation)}`;
+    if (messagesKey === lastDirectMessagesKey) return;
+    lastDirectMessagesKey = messagesKey;
+    directMessages.replaceChildren();
+    if (!conversation.length) {
+      directMessages.append(textElement("p", "Start a private conversation.", "presentation-follow-chat-empty"));
+      return;
+    }
+    conversation.forEach((message) => {
+      const card = document.createElement("article");
+      card.className = `presentation-follow-chat-message${message.mine ? " presentation-follow-chat-teacher" : ""}`;
+      card.append(
+        textElement("small", message.sender_name || (message.mine ? "You" : "Participant")),
+        textElement("span", message.message || "")
+      );
+      directMessages.append(card);
+    });
+    directMessages.scrollTop = directMessages.scrollHeight;
+  }
+
+  async function refreshDirectMessages() {
+    if (!directDialog.open || !participantId || directMessagesPending) return;
+    directMessagesPending = true;
+    try {
+      const query = new URLSearchParams({ participant_id: participantId });
+      const response = await fetch(
+        `${basePath}/api/presentation-simulations/${encodeURIComponent(token)}/messages?${query}`,
+        { credentials: "same-origin", headers: { Accept: "application/json" } }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Private messages could not be refreshed.");
+      latestDirectParticipants = Array.isArray(data.participants) ? data.participants : [];
+      latestDirectMessages = Array.isArray(data.messages) ? data.messages : [];
+      directStatus.textContent = "";
+      renderDirectChat(latestDirectParticipants, latestDirectMessages);
+    } catch (error) {
+      directStatus.textContent = error instanceof Error ? error.message : "Private messages could not be refreshed.";
+    } finally {
+      directMessagesPending = false;
+    }
+  }
+
   async function submitInteraction(interaction) {
     if (interactionPending) return;
     interactionPending = true;
@@ -496,7 +608,8 @@
     [...pollPanel.querySelectorAll("button"), ...reactions.querySelectorAll("button")].forEach((button) => {
       button.disabled = true;
     });
-    status.textContent = interaction.type === "question" ? "Sending your message…" : "Sending your response…";
+    if (interaction.type === "direct_message") directStatus.textContent = "";
+    status.textContent = ["question", "direct_message"].includes(interaction.type) ? "Sending your message…" : "Sending your response…";
     try {
       const response = await fetch(`${basePath}/api/presentation-simulations/${encodeURIComponent(token)}/interaction`, {
         method: "POST",
@@ -516,14 +629,19 @@
       }
       if (interaction.type === "reaction") ownReactions.set("reaction", interaction.reaction);
       if (interaction.type === "question") questionForm.elements.namedItem("question").value = "";
+      if (interaction.type === "direct_message") directForm.elements.namedItem("message").value = "";
       latestState = data;
       renderState(data);
+      if (interaction.type === "direct_message") await refreshDirectMessages();
       status.textContent = interaction.type === "poll"
         ? "✅ Your answer has been sent!"
-        : interaction.type === "question" ? "✅ Your question has been sent!" : "✅ Response received";
+        : interaction.type === "question" ? "✅ Your question has been sent!"
+          : interaction.type === "direct_message" ? "✅ Your private message has been sent!" : "✅ Response received";
       submitted = true;
     } catch (error) {
-      status.textContent = error instanceof Error ? error.message : "Your response could not be sent. Please try again.";
+      const message = error instanceof Error ? error.message : "Your response could not be sent. Please try again.";
+      if (interaction.type === "direct_message") directStatus.textContent = message;
+      else status.textContent = message;
     } finally {
       interactionPending = false;
       if (!submitted && latestState) {
@@ -578,10 +696,16 @@
     stage.replaceChildren(textElement("p", message, "presentation-follow-placeholder"));
     count.textContent = "";
     pollPanel.hidden = true;
+    pollDialogTrigger.hidden = true;
     reactions.hidden = true;
+    dialogs.forEach((dialog) => {
+      if (dialog.open) dialog.close();
+    });
     questionForm.querySelector("textarea").disabled = true;
     questionForm.querySelector("button").disabled = true;
-    paceToggle.hidden = true;
+    directForm.querySelector("textarea").disabled = true;
+    directForm.querySelector("button").disabled = true;
+    directRecipient.disabled = true;
     progress.style.width = "0";
     stageResizeObserver?.disconnect();
   }
@@ -726,8 +850,9 @@
           item.style.setProperty("--reveal-delay", `${index * 70}ms`);
         });
       });
-      const previousDetail = previousArticle?.querySelector(":scope > p");
-      if (detail.textContent.trim() && detail.textContent !== previousDetail?.textContent) {
+      const detail = article.querySelector(":scope > .presentation-slide-visual-suggestion");
+      const previousDetail = previousArticle?.querySelector(":scope > .presentation-slide-visual-suggestion");
+      if (detail?.textContent.trim() && detail.textContent !== previousDetail?.textContent) {
         detail.classList.add("presentation-item-zoom-in");
       }
     }
@@ -744,7 +869,7 @@
     article.style.height = `${width * 9 / 16}px`;
   }
   const stageResizeObserver = typeof ResizeObserver === "function"
-    ? new ResizeObserver(() => requestAnimationFrame(fitSlideToStage))
+    ? new ResizeObserver(() => requestAnimationFrame(() => fitSlideToStage()))
     : null;
   stageResizeObserver?.observe(stage);
 
@@ -753,8 +878,8 @@
       showEnded("The teacher has ended this presentation.");
       return;
     }
+    reactions.hidden = false;
     Object.entries(data.own_poll_answers || {}).forEach(([pollId, answerIndex]) => ownAnswers.set(pollId, Number(answerIndex)));
-    paceToggle.hidden = false;
     const slideKey = JSON.stringify([
       data.active_slide, data.slide_count, data.title, data.subject, data.year, data.template,
       data.visual_theme, data.reveal_mode, data.reveal_step, data.slide
@@ -782,6 +907,7 @@
       lastQuestionsKey = questionsKey;
       renderQuestions(questions);
     }
+    renderDirectChat(latestDirectParticipants, latestDirectMessages);
     if (data.timer_ends_at !== lastTimerKey) {
       lastTimerKey = data.timer_ends_at || "";
       updateTimer(data);
@@ -972,6 +1098,16 @@
     const question = questionForm.elements.namedItem("question").value.trim();
     if (question) void submitInteraction({ type: "question", question });
   });
+  directRecipient.addEventListener("change", () => {
+    renderDirectChat(latestDirectParticipants, latestDirectMessages);
+  });
+  directForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const message = directForm.elements.namedItem("message").value.trim();
+    const recipientId = directRecipient.value;
+    if (message && recipientId) void submitInteraction({ type: "direct_message", recipient_id: recipientId, message });
+  });
   fullscreenButton.addEventListener("click", async () => {
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
@@ -986,13 +1122,6 @@
     fullscreenButton.innerHTML = active
       ? '<i class="fa-solid fa-compress" aria-hidden="true"></i><span>Exit full screen</span>'
       : '<i class="fa-solid fa-expand" aria-hidden="true"></i><span>Full screen</span>';
-  });
-  paceToggle.addEventListener("click", () => {
-    const expanded = paceToggle.getAttribute("aria-expanded") !== "true";
-    paceToggle.setAttribute("aria-expanded", String(expanded));
-    reactions.hidden = !expanded;
-    paceToggle.querySelector("span").textContent = expanded ? "Hide pace" : "Show pace";
-    paceToggle.querySelector("i").className = `fa-solid ${expanded ? "fa-eye-slash" : "fa-gauge-high"}`;
   });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && !stopped) {

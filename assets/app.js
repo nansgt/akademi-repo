@@ -7214,6 +7214,116 @@
       }
       lastReactionCounts = { ...counts };
     };
+    const openTeacherDirectChat = (student, simulationId) => {
+      if (!simulationId || !/^[a-f0-9]{64}$/.test(String(student.id || ""))) return;
+      const dialog = document.createElement("dialog");
+      dialog.className = "presentation-direct-chat-dialog";
+      const header = document.createElement("header");
+      const heading = document.createElement("h2");
+      heading.textContent = `Private chat · ${String(student.name || "Student")}`;
+      const close = document.createElement("button");
+      close.type = "button";
+      close.setAttribute("aria-label", "Close private chat");
+      close.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+      close.addEventListener("click", () => dialog.close());
+      header.append(heading, close);
+      const transcript = document.createElement("div");
+      transcript.className = "presentation-direct-chat-transcript";
+      transcript.setAttribute("aria-live", "polite");
+      const status = document.createElement("p");
+      status.className = "presentation-direct-chat-status";
+      status.setAttribute("role", "status");
+      const form = document.createElement("form");
+      form.className = "presentation-direct-chat-composer";
+      const textarea = document.createElement("textarea");
+      textarea.name = "message";
+      textarea.maxLength = 1000;
+      textarea.rows = 2;
+      textarea.required = true;
+      textarea.setAttribute("aria-label", `Private message to ${String(student.name || "student")}`);
+      textarea.placeholder = "Write a private message…";
+      const send = document.createElement("button");
+      send.type = "submit";
+      send.innerHTML = '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span>Send privately</span>';
+      form.append(textarea, send);
+      dialog.append(header, transcript, status, form);
+      document.body.append(dialog);
+      let messagesKey = "";
+      let loading = false;
+      const renderMessages = (messages = []) => {
+        const key = JSON.stringify(messages);
+        if (key === messagesKey) return;
+        const wasAtBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 48;
+        messagesKey = key;
+        transcript.replaceChildren();
+        if (!messages.length) {
+          const empty = document.createElement("p");
+          empty.textContent = "Start a private conversation with this student.";
+          transcript.append(empty);
+        }
+        messages.forEach((message) => {
+          const bubble = document.createElement("article");
+          bubble.className = `presentation-direct-chat-message${message.mine ? " is-mine" : ""}`;
+          const sender = document.createElement("small");
+          sender.textContent = message.mine ? "You" : String(message.sender_name || student.name || "Student");
+          const text = document.createElement("p");
+          text.textContent = String(message.message || "");
+          bubble.append(sender, text);
+          transcript.append(bubble);
+        });
+        if (wasAtBottom) transcript.scrollTop = transcript.scrollHeight;
+      };
+      const refreshMessages = async () => {
+        if (loading || !dialog.open) return;
+        loading = true;
+        try {
+          const result = await workspaceRequest(
+            `/api/teacher/presentation-simulations/${encodeURIComponent(simulationId)}/participants/${encodeURIComponent(student.id)}/messages`,
+            "GET",
+            undefined,
+            { silent: true }
+          );
+          renderMessages(Array.isArray(result.messages) ? result.messages : []);
+          status.textContent = "";
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : "The conversation could not be refreshed.";
+        } finally {
+          loading = false;
+        }
+      };
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const message = textarea.value.trim();
+        if (!message || loading) return;
+        loading = true;
+        send.disabled = true;
+        status.textContent = "";
+        try {
+          const result = await workspaceRequest(
+            `/api/teacher/presentation-simulations/${encodeURIComponent(simulationId)}/participants/${encodeURIComponent(student.id)}/messages`,
+            "POST",
+            { message },
+            { silent: true }
+          );
+          textarea.value = "";
+          renderMessages(Array.isArray(result.messages) ? result.messages : []);
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : "The private message could not be sent.";
+        } finally {
+          loading = false;
+          send.disabled = false;
+          textarea.focus();
+        }
+      });
+      dialog.addEventListener("close", () => {
+        window.clearInterval(refreshTimer);
+        dialog.remove();
+      }, { once: true });
+      const refreshTimer = window.setInterval(() => void refreshMessages(), 3000);
+      dialog.showModal();
+      void refreshMessages();
+      textarea.focus();
+    };
     const renderParticipants = (participants = []) => {
       const summary = JSON.stringify(participants);
       if (summary === lastParticipantSummary) return;
@@ -7265,6 +7375,15 @@
         presence.className = student.online ? "is-online" : "is-offline";
         presence.textContent = student.online ? "Online" : "Away";
         item.append(name, presence);
+        if (student.online && /^[a-f0-9]{64}$/.test(String(student.id || ""))) {
+          const chat = document.createElement("button");
+          chat.type = "button";
+          chat.className = "presentation-participant-chat";
+          chat.innerHTML = '<i class="fa-solid fa-comment-dots" aria-hidden="true"></i><span>Message</span>';
+          chat.setAttribute("aria-label", `Message ${String(student.name || "student")} privately`);
+          chat.addEventListener("click", () => openTeacherDirectChat(student, liveSession?.id));
+          item.append(chat);
+        }
         participantList.append(item);
       });
     };
@@ -8361,6 +8480,7 @@
           const updatedQuestions = questions.map((question) => Number(question.id) === Number(selectedQuestion.id)
             ? { ...question, ...result.question }
             : question);
+          reply.value = "";
           renderTeacherChat(container, updatedQuestions, simulationId, onError, onSaved);
           onSaved(updatedQuestions);
         } catch (error) {

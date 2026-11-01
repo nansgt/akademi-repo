@@ -519,6 +519,34 @@ final class PresentationSimulationService
         return $this->stateFromRow($row, true, $participantHash);
     }
 
+    public function studentDirectMessages(string $token, string $participantId): array
+    {
+        $participantId = strtolower(trim($participantId));
+        if (!preg_match('/^[a-f0-9-]{36}$/D', $participantId)) {
+            throw new RuntimeException('Refresh the student presentation and try again.', 422);
+        }
+        $participantHash = hash('sha256', $participantId);
+        $statement = Connection::get()->prepare(
+            'SELECT s.id FROM presentation_simulations s
+             INNER JOIN presentation_simulation_participants p ON p.simulation_id = s.id
+             WHERE s.share_token_hash = :token_hash AND s.status = \'active\' AND s.expires_at > UTC_TIMESTAMP()
+               AND p.participant_hash = :participant_hash
+             LIMIT 1'
+        );
+        $statement->execute([
+            'token_hash' => hash('sha256', $token, true),
+            'participant_hash' => $participantHash,
+        ]);
+        $simulationId = $statement->fetchColumn();
+        if ($simulationId === false) {
+            throw new RuntimeException('Join the live presentation before opening private chat.', 409);
+        }
+        return [
+            'participants' => $this->participantsForStudent((int)$simulationId, $participantHash),
+            'messages' => $this->directMessagesForParticipant((int)$simulationId, $participantHash),
+        ];
+    }
+
     public function join(string $token, array $input): array
     {
         $participantId = strtolower(trim((string)($input['participant_id'] ?? '')));
@@ -654,6 +682,57 @@ final class PresentationSimulationService
                     'participant_name' => $participantName,
                     'question' => $question,
                 ]);
+            } elseif ($type === 'direct_message') {
+                $messageInput = $input['message'] ?? null;
+                $recipientInput = $input['recipient_id'] ?? null;
+                if (!is_string($messageInput) || !is_string($recipientInput)) {
+                    throw new RuntimeException('Choose a recipient and write a message of 1 to 1000 characters.', 422);
+                }
+                $message = trim($messageInput);
+                if ($message === '' || mb_strlen($message) > 1000) {
+                    throw new RuntimeException('Write a message of 1 to 1000 characters.', 422);
+                }
+                if ($recipientInput === 'teacher') {
+                    $recipientHash = null;
+                } elseif (preg_match('/^[a-f0-9]{64}$/D', $recipientInput)) {
+                    $recipientHash = strtolower($recipientInput);
+                    if (hash_equals($participantHash, $recipientHash)) {
+                        throw new RuntimeException('Choose another participant to message.', 422);
+                    }
+                    $recipient = $pdo->prepare(
+                        'SELECT 1 FROM presentation_simulation_participants
+                         WHERE simulation_id = :simulation_id AND participant_hash = :participant_hash
+                           AND last_seen_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 SECOND)
+                         LIMIT 1'
+                    );
+                    $recipient->execute(['simulation_id' => $simulationId, 'participant_hash' => $recipientHash]);
+                    if (!$recipient->fetchColumn()) {
+                        throw new RuntimeException('That student is no longer online. Choose another recipient.', 409);
+                    }
+                } else {
+                    throw new RuntimeException('Choose an online participant to message.', 422);
+                }
+                $rateLimit = $pdo->prepare(
+                    'SELECT COUNT(*) FROM presentation_simulation_direct_messages
+                     WHERE simulation_id = :simulation_id AND sender_hash = :sender_hash
+                       AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MINUTE)'
+                );
+                $rateLimit->execute(['simulation_id' => $simulationId, 'sender_hash' => $participantHash]);
+                if ((int)$rateLimit->fetchColumn() >= 20) {
+                    throw new RuntimeException('Please wait a moment before sending another message.', 429);
+                }
+                $save = $pdo->prepare(
+                    'INSERT INTO presentation_simulation_direct_messages
+                     (simulation_id, sender_hash, recipient_hash, sender_name, message)
+                     VALUES (:simulation_id, :sender_hash, :recipient_hash, :sender_name, :message)'
+                );
+                $save->execute([
+                    'simulation_id' => $simulationId,
+                    'sender_hash' => $participantHash,
+                    'recipient_hash' => $recipientHash,
+                    'sender_name' => $participantName,
+                    'message' => $message,
+                ]);
             } else {
                 throw new RuntimeException('Choose a supported presentation interaction.', 422);
             }
@@ -665,6 +744,105 @@ final class PresentationSimulationService
             throw $exception;
         }
         return $this->read($token, $participantId);
+    }
+
+    public function teacherDirectMessages(int $userId, int $simulationId, string $participantHash): array
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/D', $participantHash)) {
+            throw new RuntimeException('The student conversation is invalid.', 422);
+        }
+        $pdo = Connection::get();
+        $owner = $pdo->prepare(
+            'SELECT 1 FROM presentation_simulations
+             WHERE id = :id AND user_id = :user_id AND status = \'active\'
+               AND expires_at > UTC_TIMESTAMP() LIMIT 1'
+        );
+        $owner->execute(['id' => $simulationId, 'user_id' => $userId]);
+        if (!$owner->fetchColumn()) {
+            throw new RuntimeException('The live presentation is no longer available.', 404);
+        }
+        $student = $pdo->prepare(
+            'SELECT 1 FROM presentation_simulation_participants
+             WHERE simulation_id = :simulation_id AND participant_hash = :participant_hash LIMIT 1'
+        );
+        $student->execute(['simulation_id' => $simulationId, 'participant_hash' => $participantHash]);
+        if (!$student->fetchColumn()) {
+            throw new RuntimeException('The student conversation was not found.', 404);
+        }
+        $messages = $pdo->prepare(
+            'SELECT sender_name, message, created_at, sender_hash IS NULL AS from_teacher
+             FROM presentation_simulation_direct_messages
+             WHERE simulation_id = :simulation_id
+               AND ((sender_hash IS NULL AND recipient_hash = :teacher_recipient)
+                 OR (sender_hash = :student_sender AND recipient_hash IS NULL))
+             ORDER BY id DESC LIMIT 200'
+        );
+        $messages->execute([
+            'simulation_id' => $simulationId,
+            'teacher_recipient' => $participantHash,
+            'student_sender' => $participantHash,
+        ]);
+        $rows = array_reverse($messages->fetchAll(PDO::FETCH_ASSOC));
+        return ['messages' => array_map(static fn(array $row): array => [
+            'sender_name' => (bool)$row['from_teacher'] ? 'Teacher' : (string)$row['sender_name'],
+            'message' => (string)$row['message'],
+            'mine' => (bool)$row['from_teacher'],
+            'created_at' => self::isoDate($row['created_at']),
+        ], $rows)];
+    }
+
+    public function sendTeacherDirectMessage(int $userId, int $simulationId, string $participantHash, mixed $messageInput): array
+    {
+        if (!preg_match('/^[a-f0-9]{64}$/D', $participantHash)) {
+            throw new RuntimeException('The student conversation is invalid.', 422);
+        }
+        if (!is_string($messageInput)) {
+            throw new RuntimeException('Write a message of 1 to 1000 characters.', 422);
+        }
+        $message = trim($messageInput);
+        if ($message === '' || mb_strlen($message) > 1000) {
+            throw new RuntimeException('Write a message of 1 to 1000 characters.', 422);
+        }
+        $pdo = Connection::get();
+        $pdo->beginTransaction();
+        try {
+            $owner = $pdo->prepare(
+                'SELECT id FROM presentation_simulations
+                 WHERE id = :id AND user_id = :user_id AND status = \'active\'
+                   AND expires_at > UTC_TIMESTAMP() LIMIT 1 FOR UPDATE'
+            );
+            $owner->execute(['id' => $simulationId, 'user_id' => $userId]);
+            if (!$owner->fetchColumn()) {
+                throw new RuntimeException('The live presentation is no longer available.', 404);
+            }
+            $student = $pdo->prepare(
+                'SELECT 1 FROM presentation_simulation_participants
+                 WHERE simulation_id = :simulation_id AND participant_hash = :participant_hash
+                   AND last_seen_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 SECOND)
+                 LIMIT 1'
+            );
+            $student->execute(['simulation_id' => $simulationId, 'participant_hash' => $participantHash]);
+            if (!$student->fetchColumn()) {
+                throw new RuntimeException('That student is no longer online.', 409);
+            }
+            $save = $pdo->prepare(
+                'INSERT INTO presentation_simulation_direct_messages
+                 (simulation_id, sender_hash, recipient_hash, sender_name, message)
+                 VALUES (:simulation_id, NULL, :recipient_hash, \'Teacher\', :message)'
+            );
+            $save->execute([
+                'simulation_id' => $simulationId,
+                'recipient_hash' => $participantHash,
+                'message' => $message,
+            ]);
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+        return $this->teacherDirectMessages($userId, $simulationId, $participantHash);
     }
 
     private function stateFromRow(array $row, bool $forStudent, ?string $participantHash = null): array
@@ -874,7 +1052,7 @@ final class PresentationSimulationService
     private function participantsForSimulation(int $simulationId): array
     {
         $statement = Connection::get()->prepare(
-            'SELECT participant_name, joined_at,
+            'SELECT participant_hash, participant_name, joined_at,
                     last_seen_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 SECOND) AS online
              FROM presentation_simulation_participants
              WHERE simulation_id = :simulation_id
@@ -882,10 +1060,64 @@ final class PresentationSimulationService
         );
         $statement->execute(['simulation_id' => $simulationId]);
         return array_map(static fn(array $row): array => [
+            'id' => (string)$row['participant_hash'],
             'name' => (string)$row['participant_name'],
             'joined_at' => self::isoDate($row['joined_at']),
             'online' => (bool)$row['online'],
         ], $statement->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    private function participantsForStudent(int $simulationId, ?string $participantHash): array
+    {
+        $statement = Connection::get()->prepare(
+            'SELECT participant_hash, participant_name
+             FROM presentation_simulation_participants
+             WHERE simulation_id = :simulation_id AND participant_hash <> :participant_hash
+               AND last_seen_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 SECOND)
+             ORDER BY participant_name'
+        );
+        $statement->execute([
+            'simulation_id' => $simulationId,
+            'participant_hash' => $participantHash ?? '',
+        ]);
+        $students = array_map(static fn(array $row): array => [
+            'id' => (string)$row['participant_hash'],
+            'name' => (string)$row['participant_name'],
+            'role' => 'student',
+            'online' => true,
+        ], $statement->fetchAll(PDO::FETCH_ASSOC));
+        array_unshift($students, ['id' => 'teacher', 'name' => 'Teacher', 'role' => 'teacher', 'online' => true]);
+        return $students;
+    }
+
+    private function directMessagesForParticipant(int $simulationId, string $participantHash): array
+    {
+        $statement = Connection::get()->prepare(
+            'SELECT sender_hash, recipient_hash, sender_name, message, created_at
+             FROM presentation_simulation_direct_messages
+             WHERE simulation_id = :simulation_id
+               AND (sender_hash = :sender_hash OR recipient_hash = :recipient_hash)
+             ORDER BY id DESC LIMIT 200'
+        );
+        $statement->execute([
+            'simulation_id' => $simulationId,
+            'sender_hash' => $participantHash,
+            'recipient_hash' => $participantHash,
+        ]);
+        $rows = array_reverse($statement->fetchAll(PDO::FETCH_ASSOC));
+        return array_map(static function (array $row) use ($participantHash): array {
+            $mine = $row['sender_hash'] !== null && hash_equals($participantHash, (string)$row['sender_hash']);
+            $peerHash = $mine
+                ? ($row['recipient_hash'] === null ? 'teacher' : (string)$row['recipient_hash'])
+                : ($row['sender_hash'] === null ? 'teacher' : (string)$row['sender_hash']);
+            return [
+                'peer_id' => $peerHash,
+                'sender_name' => $mine ? 'You' : ($row['sender_hash'] === null ? 'Teacher' : (string)$row['sender_name']),
+                'message' => (string)$row['message'],
+                'mine' => $mine,
+                'created_at' => self::isoDate($row['created_at']),
+            ];
+        }, $rows);
     }
 
     private static function validateParticipantName(mixed $value): string

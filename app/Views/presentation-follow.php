@@ -17,8 +17,8 @@ header('X-Robots-Tag: noindex, nofollow');
   <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/solid.min.css')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/action-icons.css')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=155')) ?>">
-  <link rel="stylesheet" href="<?= e(app_url('assets/presentation-follow.css?v=27')) ?>">
-  <script src="<?= e(app_url('assets/presentation-follow.js?v=29')) ?>" defer></script>
+  <link rel="stylesheet" href="<?= e(app_url('assets/presentation-follow.css?v=31')) ?>">
+  <script src="<?= e(app_url('assets/presentation-follow.js?v=32')) ?>" defer></script>
   <script src="<?= e(app_url('assets/action-icons.js?v=1')) ?>" defer></script>
 </head>
 <body class="presentation-follow-page">
@@ -45,21 +45,48 @@ header('X-Robots-Tag: noindex, nofollow');
         <div class="presentation-follow-stage" data-follow-stage>
           <div class="presentation-follow-placeholder">Waiting for the teacher to start the presentation…</div>
         </div>
-        <section class="presentation-follow-poll" data-follow-poll hidden aria-live="polite"></section>
-        <nav class="presentation-follow-reactions" id="follow-reactions" data-follow-reactions aria-label="Classroom pace responses" hidden></nav>
-        <details class="presentation-follow-questions" data-follow-question-panel>
-          <summary><i class="fa-solid fa-comments" aria-hidden="true"></i> Class chat <span class="presentation-follow-counter" data-follow-question-count hidden></span></summary>
-          <div data-follow-questions></div>
-          <form data-follow-question-form>
-            <label for="follow-student-question">Message</label>
-            <textarea id="follow-student-question" name="question" maxlength="1000" required rows="2" placeholder="Write a message to your teacher…"></textarea>
-            <button type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send message <span class="presentation-follow-counter" hidden></span></button>
-          </form>
-        </details>
         <footer class="presentation-follow-footer">
           <span data-follow-title>Live classroom presentation</span>
-          <div><strong data-follow-timer aria-live="off"></strong><strong data-follow-count aria-live="polite"></strong><button type="button" class="presentation-follow-pace-toggle" data-follow-pace-toggle aria-expanded="false" aria-controls="follow-reactions" hidden><i class="fa-solid fa-gauge-high" aria-hidden="true"></i><span>Show pace</span><span class="presentation-follow-counter" data-follow-pace-count hidden></span></button><button type="button" class="presentation-follow-fullscreen" data-follow-fullscreen aria-label="Enter full screen" aria-pressed="false"><i class="fa-solid fa-expand" aria-hidden="true"></i><span>Full screen</span></button></div>
+          <div class="presentation-follow-toolbar">
+            <strong data-follow-timer aria-live="off"></strong>
+            <strong data-follow-count aria-live="polite"></strong>
+            <button type="button" data-follow-dialog-open="poll" hidden><i class="fa-solid fa-square-poll-vertical" aria-hidden="true"></i> Poll</button>
+            <button type="button" data-follow-dialog-open="pace"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i> Class pace <span class="presentation-follow-counter" data-follow-pace-count hidden></span></button>
+            <button type="button" data-follow-dialog-open="chat"><i class="fa-solid fa-comments" aria-hidden="true"></i> Class chat <span class="presentation-follow-counter" data-follow-question-count hidden></span></button>
+            <button type="button" data-follow-dialog-open="direct"><i class="fa-solid fa-user-group" aria-hidden="true"></i> Private chat</button>
+            <button type="button" class="presentation-follow-fullscreen" data-follow-fullscreen aria-label="Enter full screen" aria-pressed="false"><i class="fa-solid fa-expand" aria-hidden="true"></i><span>Full screen</span></button>
+          </div>
         </footer>
+        <dialog class="presentation-follow-dialog" data-follow-dialog="poll" aria-labelledby="follow-poll-title">
+          <header><h2 id="follow-poll-title">Class poll</h2><button type="button" data-follow-dialog-close aria-label="Close poll"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
+          <section class="presentation-follow-poll" data-follow-poll hidden aria-live="polite"></section>
+        </dialog>
+        <dialog class="presentation-follow-dialog" data-follow-dialog="pace" aria-labelledby="follow-pace-title">
+          <header><h2 id="follow-pace-title">Class pace</h2><button type="button" data-follow-dialog-close aria-label="Close class pace"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
+          <nav class="presentation-follow-reactions" id="follow-reactions" data-follow-reactions aria-label="Classroom pace responses" hidden></nav>
+        </dialog>
+        <dialog class="presentation-follow-dialog presentation-follow-chat-dialog" data-follow-dialog="chat" aria-labelledby="follow-chat-title">
+          <header><h2 id="follow-chat-title">Class chat</h2><button type="button" data-follow-dialog-close aria-label="Close class chat"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
+          <div class="presentation-follow-chat-list" data-follow-questions></div>
+          <form class="presentation-follow-chat-form" data-follow-question-form>
+            <label for="follow-student-question">Message your teacher</label>
+            <textarea id="follow-student-question" name="question" maxlength="1000" required rows="2" placeholder="Write a message…"></textarea>
+            <button type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send message</button>
+          </form>
+        </dialog>
+        <dialog class="presentation-follow-dialog presentation-follow-chat-dialog presentation-follow-direct-dialog" data-follow-dialog="direct" aria-labelledby="follow-direct-title">
+          <header><h2 id="follow-direct-title">Private chat</h2><button type="button" data-follow-dialog-close aria-label="Close private chat"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header>
+          <label class="presentation-follow-direct-recipient" for="follow-direct-recipient">Chat with
+            <select id="follow-direct-recipient" data-follow-direct-recipient></select>
+          </label>
+          <div class="presentation-follow-chat-list" data-follow-direct-messages aria-live="polite"></div>
+          <p class="presentation-follow-direct-status" data-follow-direct-status role="status"></p>
+          <form class="presentation-follow-chat-form" data-follow-direct-form>
+            <label for="follow-direct-message">Private message</label>
+            <textarea id="follow-direct-message" name="message" maxlength="1000" required rows="2" placeholder="Write a private message…"></textarea>
+            <button type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send privately</button>
+          </form>
+        </dialog>
       </div>
     </section>
   </main>
