@@ -86,7 +86,8 @@
     if (button.dataset.actionIconLabel === label && currentIcon) return;
     currentIcon?.remove();
 
-    if (!match || button.querySelector("svg, i.fa-solid, i.fa-regular")) {
+    const hasTextCloseMark = match?.[1] === "fa-xmark" && /[×✕✖]/.test(button.textContent || "");
+    if (!match || hasTextCloseMark || button.querySelector("svg, i.fa-solid, i.fa-regular")) {
       delete button.dataset.actionIcon;
       delete button.dataset.actionIconLabel;
       return;

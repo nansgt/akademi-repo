@@ -1538,6 +1538,7 @@ html[data-theme="dark"] .reader-download { color: var(--brand-primary); }
 .presentation-copy-feedback { flex: 0 0 auto; color: #9ce5bd; font-size: 11px; font-weight: 650; }
 .presentation-copy-feedback:empty { display: none; }
 .presentation-live-status { flex: 1 0 100%; color: #d6e5d9; font-size: 11px; line-height: 1.5; }
+.presentation-live-status:empty { display: none; }
 .presentation-live-sharing[data-ended="true"] > .presentation-live-link { display: none; }
 .presentation-live-sharing[data-ended="true"] > button,
 .presentation-live-sharing[data-ended="true"] > .presentation-icon-button { display: none; }
@@ -1873,19 +1874,22 @@ html[data-theme="dark"] .presentation-theme-vibrant { border-color: #4f3c56; }
 .presentation-pace-card h3 { gap: 4px; margin: 0; font-size: 10px; white-space: nowrap; }
 .presentation-feedback-items { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
 .presentation-feedback-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 5px;
   min-width: 0;
-  padding: 3px 7px;
-  border-radius: 6px;
+  min-height: 24px;
+  padding: 2px 7px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 999px;
   background: #1b3047;
   color: #d6e5d9;
   font-size: 9px;
+  line-height: 1;
 }
-.presentation-feedback-item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.presentation-feedback-item strong { flex: 0 0 auto; color: #8ce2b8; font-size: 11px; }
+.presentation-feedback-icon { flex: 0 0 auto; font-size: 12px; }
+.presentation-feedback-item strong { flex: 0 0 auto; color: #8ce2b8; font-size: 11px; font-variant-numeric: tabular-nums; }
 .presentation-feedback-item small { display: none; }
 .presentation-feedback-toggle { position: relative; flex: 0 0 auto; }
 .presentation-feedback-count, .presentation-live-count { display: inline-grid; min-width: 18px; height: 18px; flex: 0 0 auto; place-items: center; padding: 0 5px; border: 1px solid #38684f; border-radius: 999px; background: #244b3b; color: #a4f0c6; font-size: 9px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }

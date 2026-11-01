@@ -3244,7 +3244,7 @@
       presentButton.type = "button";
       presentButton.className = "small-button";
       presentButton.dataset.action = "present";
-      presentButton.textContent = "Present";
+      presentButton.innerHTML = '<i class="fa-solid fa-play" aria-hidden="true"></i> Present';
       presentButton.addEventListener("click", () => openPresentationViewer(itemData.data, itemData.title));
       container.querySelector(".output-actions")?.insertBefore(presentButton, saveButton);
       const exportPresentation = (format) => {
@@ -6704,6 +6704,7 @@
       showToast("This saved presentation has no slides to display.", "error");
       return;
     }
+    document.querySelectorAll("dialog[open]").forEach((openDialog) => openDialog.close());
 
     const dialog = document.createElement("dialog");
     dialog.className = "presentation-viewer-dialog";
@@ -6770,7 +6771,7 @@
             <button type="button" class="presentation-icon-button" data-presentation-presenter-view aria-label="Presenter notes" aria-pressed="false" title="Presenter notes"><i class="fa-solid fa-sticky-note"></i><small>Notes</small></button>
             <button type="button" class="presentation-icon-button" data-presentation-open-history aria-label="Open presentation history" title="Presentation history"><i class="fa-solid fa-clock-rotate-left"></i><small>History</small></button>
             <button type="button" class="presentation-icon-button" data-presentation-fullscreen aria-label="Toggle full screen" title="Full screen"><i class="fa-solid fa-expand"></i><small>Full</small></button>
-            <button type="button" class="presentation-icon-button" data-presentation-close aria-label="Exit presentation" title="Exit"><i class="fa-solid fa-xmark"></i><small>Exit</small></button>
+            <button type="button" class="presentation-icon-button" data-presentation-close aria-label="Exit presentation" title="Exit"><i class="fa-solid fa-xmark" aria-hidden="true"></i><small>Exit</small></button>
           </div>
         </nav>
       </header>
@@ -7016,37 +7017,40 @@
     };
     const updateReactionFeedback = (counts = {}, responses = []) => {
       const labels = {
-        understood: "Understood",
-        confused: "Confused",
-        slower: "Slower",
-        faster: "Faster"
+        understood: { label: "Understood", icon: "😊" },
+        confused: { label: "Confused", icon: "🤔" },
+        slower: { label: "Please slow down", icon: "🐢" },
+        faster: { label: "We can go faster", icon: "🚀" }
       };
       paceItems.replaceChildren();
-      Object.entries(labels).forEach(([key, label]) => {
+      Object.entries(labels).forEach(([key, reaction]) => {
         const item = document.createElement("span");
         item.className = `presentation-feedback-item presentation-feedback-${key}`;
-        const name = document.createElement("span");
-        name.textContent = label;
+        const icon = document.createElement("span");
+        icon.className = "presentation-feedback-icon";
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = reaction.icon;
         const value = document.createElement("strong");
         value.textContent = String(Number(counts[key] || 0));
         const respondents = document.createElement("small");
         const respondentNames = responses.filter((response) => response.reaction === key)
           .map((response) => response.participant_name).join(", ");
         respondents.textContent = respondentNames;
+        const accessibleLabel = `${reaction.label}: ${value.textContent}${respondentNames ? `. Students: ${respondentNames}` : ""}`;
+        item.title = accessibleLabel;
+        item.setAttribute("role", "img");
+        item.setAttribute("aria-label", accessibleLabel);
         if (respondentNames) {
-          item.title = `${label}: ${respondentNames}`;
-          item.setAttribute("aria-label", `${label}: ${respondentNames}`);
-        } else {
-          item.setAttribute("aria-label", `${label}: ${value.textContent}`);
+          respondents.setAttribute("aria-hidden", "true");
         }
-        item.append(name, value, respondents);
+        item.append(icon, value, respondents);
         paceItems.append(item);
       });
       updateFeedbackCount("pace", Object.values(counts).reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0));
       if (lastReactionCounts) {
         const changes = Object.entries(labels)
           .filter(([key]) => Number(counts[key] || 0) > Number(lastReactionCounts[key] || 0))
-          .map(([, label]) => label);
+          .map(([, reaction]) => reaction.label);
         if (changes.length) {
           reactionNotice.textContent = `Student response: ${changes.join(", ")}`;
           if (reactionNoticeTimer !== null) window.clearTimeout(reactionNoticeTimer);
@@ -7897,7 +7901,6 @@
         const liveStatus = document.createElement("span");
         liveStatus.className = "presentation-live-status";
         liveStatus.setAttribute("aria-live", "polite");
-        liveStatus.textContent = "Students follow reveals, drawings, polls, reactions and the class timer. The secure link remains available until this session expires.";
         liveControls.replaceChildren(linkLabel, linkInput, openLink, participantsButton, linkToggle, copyButton, endButton, copyFeedback, liveStatus);
         const visibilityButton = (key, label, icon, panel) => {
           const button = document.createElement("button");
@@ -8042,6 +8045,7 @@
       showToast("The saved presentation is unavailable. Reopen it and try again.", "error");
       return;
     }
+    if (savedDocumentDialog.open) savedDocumentDialog.close();
     openPresentationViewer(activeSavedDocument.data || {}, activeSavedDocument.title);
   });
 
@@ -8761,7 +8765,7 @@
       const actions = card.querySelector(".output-actions");
       if (actions) {
         const exportActions = doc.type === "slides"
-          ? '<button type="button" class="small-button" data-saved-doc-present>Present</button><button type="button" class="small-button" data-saved-doc-export="pdf">Download PDF</button><button type="button" class="small-button" data-saved-doc-export="pptx">Download PowerPoint</button>'
+          ? '<button type="button" class="small-button" data-saved-doc-present><i class="fa-solid fa-play" aria-hidden="true"></i> Present</button><button type="button" class="small-button" data-saved-doc-export="pdf">Download PDF</button><button type="button" class="small-button" data-saved-doc-export="pptx">Download PowerPoint</button>'
           : '<button type="button" class="small-button" data-saved-doc-export="docx">Word · DOCX</button><button type="button" class="small-button" data-saved-doc-export="pdf">PDF</button><button type="button" class="small-button" data-saved-doc-print>Print</button>';
         actions.innerHTML = `${doc.data?.online_assessment_id ? `<button type="button" class="small-button" data-manage-saved-assessment="${escapeHtml(doc.data.online_assessment_id)}">Manage class &amp; scores</button>` : ""}<button type="button" class="small-button" data-saved-doc-edit>${editing ? "Save changes" : "Edit"}</button>${editing ? '<button type="button" class="small-button" data-saved-doc-cancel>Cancel edit</button>' : ""}${exportActions}`;
       }
