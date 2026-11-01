@@ -10,7 +10,7 @@ declare(strict_types=1);
   <meta name="csrf-token" content="<?= e(\Akademi\Security\Csrf::token()) ?>">
   <meta name="robots" content="noindex,nofollow">
   <link rel="icon" href="<?= e(app_url('assets/icon.svg')) ?>" type="image/svg+xml">
-  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=29')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=149')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/auth.css?v=23')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/assessment-take.css?v=11')) ?>">
   <title>Online assessment · Akademi</title>
@@ -113,7 +113,7 @@ declare(strict_types=1);
       <p class="assessment-complete-note">Your response has been recorded securely. You may now close this page.</p>
     </section>
   </main>
-  <script src="<?= e(app_url('assets/assessment-rendering.js?v=2')) ?>" defer></script>
+  <script src="<?= e(app_url('assets/assessment-rendering.js?v=3')) ?>" defer></script>
   <script src="<?= e(app_url('assets/assessment-take.js?v=18')) ?>" defer></script>
 </body>
 </html>

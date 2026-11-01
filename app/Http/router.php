@@ -576,6 +576,21 @@ try {
         json_response(['deleted' => true]);
     }
 
+    if (preg_match('#^/api/workspace/documents/([1-9][0-9]*)/archive$#D', $path, $matches) && $method === 'POST') {
+        Csrf::verifyRequest();
+        $user = require_user($auth);
+        $auth->requireRole($user, 'teacher');
+        $input = request_json();
+        if (!is_bool($input['archived'] ?? null)) {
+            throw new RuntimeException('Choose whether to archive or restore the document.', 422);
+        }
+        json_response(['document' => (new WorkspaceService())->setDocumentArchived(
+            (int)$user['id'],
+            (int)$matches[1],
+            $input['archived']
+        )]);
+    }
+
     if ($path === '/api/workspace/schedule' && $method === 'POST') {
         Csrf::verifyRequest();
         $user = require_user($auth);

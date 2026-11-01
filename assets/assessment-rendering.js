@@ -156,9 +156,142 @@
     return { html: `${paragraphs}${table}`, ...parsed };
   }
 
+  function renderCoordinateGeometry(visual) {
+    const bounds = ["x_min", "x_max", "y_min", "y_max"].map((key) => Number(visual[key]));
+    const shapes = Array.isArray(visual.shapes) ? visual.shapes : [];
+    if (bounds.some((value) => !Number.isFinite(value)) || bounds[0] >= bounds[1] || bounds[2] >= bounds[3]
+      || !shapes.length || shapes.length > 8) return null;
+    const [xMin, xMax, yMin, yMax] = bounds;
+    const width = 760, height = 420;
+    const plot = { left: 68, right: 24, top: 40, bottom: 346 };
+    const scale = Math.min((width - plot.left - plot.right) / (xMax - xMin), (plot.bottom - plot.top) / (yMax - yMin));
+    const plotWidth = (xMax - xMin) * scale, plotHeight = (yMax - yMin) * scale;
+    const offsetX = plot.left + ((width - plot.left - plot.right) - plotWidth) / 2;
+    const offsetY = plot.top + ((plot.bottom - plot.top) - plotHeight) / 2;
+    const px = (value) => offsetX + (value - xMin) * scale;
+    const py = (value) => offsetY + (yMax - value) * scale;
+    const n = (value) => Number(value.toFixed(2));
+    const colors = ["#247456", "#d0a64a", "#277da1", "#c85845", "#7256a8", "#4d7c78", "#bf6b40", "#5572a8"];
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", String(visual.title || "Geometry diagram"));
+    svg.classList.add("assessment-geometry");
+    const add = (name, attributes, text) => {
+      const element = document.createElementNS(svg.namespaceURI, name);
+      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+      if (text !== undefined) element.textContent = String(text);
+      svg.append(element);
+      return element;
+    };
+    add("text", { x: width / 2, y: 22, "text-anchor": "middle", class: "graph-title" }, visual.title || "Geometry diagram");
+    for (let tick = 0; tick <= 4; tick++) {
+      const x = offsetX + plotWidth * tick / 4, y = offsetY + plotHeight * tick / 4;
+      add("line", { x1: n(x), y1: n(offsetY), x2: n(x), y2: n(offsetY + plotHeight), class: "graph-grid" });
+      add("line", { x1: n(offsetX), y1: n(y), x2: n(offsetX + plotWidth), y2: n(y), class: "graph-grid" });
+      add("text", { x: n(x), y: n(offsetY + plotHeight + 16), "text-anchor": "middle", class: "graph-tick" }, n(xMin + (xMax - xMin) * tick / 4));
+      add("text", { x: n(offsetX - 8), y: n(y + 4), "text-anchor": "end", class: "graph-tick" }, n(yMax - (yMax - yMin) * tick / 4));
+    }
+    const axisX = xMin <= 0 && xMax >= 0 ? px(0) : offsetX;
+    const axisY = yMin <= 0 && yMax >= 0 ? py(0) : offsetY + plotHeight;
+    add("line", { x1: n(axisX), y1: n(offsetY), x2: n(axisX), y2: n(offsetY + plotHeight), class: "graph-axis" });
+    add("line", { x1: n(offsetX), y1: n(axisY), x2: n(offsetX + plotWidth), y2: n(axisY), class: "graph-axis" });
+    const clipId = `assessment-geometry-${Math.random().toString(36).slice(2)}`;
+    const defs = document.createElementNS(svg.namespaceURI, "defs");
+    const clip = document.createElementNS(svg.namespaceURI, "clipPath");
+    clip.id = clipId;
+    const clipRect = document.createElementNS(svg.namespaceURI, "rect");
+    Object.entries({ x: n(offsetX), y: n(offsetY), width: n(plotWidth), height: n(plotHeight) })
+      .forEach(([key, value]) => clipRect.setAttribute(key, String(value)));
+    clip.append(clipRect);
+    defs.append(clip);
+    svg.append(defs);
+    const drawing = document.createElementNS(svg.namespaceURI, "g");
+    drawing.setAttribute("clip-path", `url(#${clipId})`);
+    const draw = (tag, attributes) => {
+      const element = document.createElementNS(svg.namespaceURI, tag);
+      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+      drawing.append(element);
+    };
+    shapes.forEach((shape, index) => {
+      if (!shape || typeof shape !== "object") return;
+      const color = colors[index % colors.length];
+      if (shape.shape === "circle" || shape.shape === "ellipse") {
+        const center = Array.isArray(shape.center) ? shape.center.map(Number) : [];
+        const radii = shape.shape === "circle" ? [Number(shape.radius), Number(shape.radius)]
+          : Array.isArray(shape.radii) ? shape.radii.map(Number) : [];
+        if (center.length !== 2 || radii.length !== 2 || ![...center, ...radii].every(Number.isFinite)) return;
+        draw("ellipse", {
+          cx: n(px(center[0])), cy: n(py(center[1])), rx: n(radii[0] * scale), ry: n(radii[1] * scale),
+          fill: color, "fill-opacity": ".14", stroke: color, "stroke-width": "2.5"
+        });
+      } else if (shape.shape === "parabola") {
+        const coefficients = Array.isArray(shape.coefficients) ? shape.coefficients.map(Number) : [];
+        const from = Number(shape.x_min), to = Number(shape.x_max);
+        if (coefficients.length !== 3 || !coefficients.every(Number.isFinite) || !Number.isFinite(from)
+          || !Number.isFinite(to) || from >= to) return;
+        const [a, b, c] = coefficients, segments = 12;
+        const yAt = (x) => a * x * x + b * x + c;
+        let path = `M ${n(px(from))} ${n(py(yAt(from)))}`;
+        for (let step = 0; step < segments; step++) {
+          const x0 = from + (to - from) * step / segments, x1 = from + (to - from) * (step + 1) / segments;
+          const y0 = yAt(x0), y1 = yAt(x1), dx = (x1 - x0) * scale / 3;
+          const control1 = { x: px(x0) + dx, y: py(y0) - (2 * a * x0 + b) * (x1 - x0) * scale / 3 };
+          const control2 = { x: px(x1) - dx, y: py(y1) + (2 * a * x1 + b) * (x1 - x0) * scale / 3 };
+          path += ` C ${n(control1.x)} ${n(control1.y)} ${n(control2.x)} ${n(control2.y)} ${n(px(x1))} ${n(py(y1))}`;
+        }
+        draw("path", { d: path, fill: "none", stroke: color, "stroke-width": "3", "stroke-linecap": "round" });
+      } else if (shape.shape === "rectangle") {
+        const left = Number(shape.x_min), right = Number(shape.x_max), top = Number(shape.y_max), bottom = Number(shape.y_min);
+        if (![left, right, top, bottom].every(Number.isFinite) || left >= right || bottom >= top) return;
+        draw("rect", {
+          x: n(px(left)), y: n(py(top)), width: n((right - left) * scale), height: n((top - bottom) * scale),
+          fill: color, "fill-opacity": ".14", stroke: color, "stroke-width": "2.5"
+        });
+      } else if (shape.shape === "line" || shape.shape === "triangle") {
+        const points = Array.isArray(shape.points) ? shape.points : [];
+        const count = shape.shape === "line" ? 2 : 3;
+        if (points.length !== count || points.some((point) => !Array.isArray(point) || point.length !== 2
+          || point.some((value) => !Number.isFinite(Number(value))))) return;
+        const pointString = points.map(([x, y]) => `${n(px(Number(x)))},${n(py(Number(y)))}`).join(" ");
+        draw(shape.shape === "line" ? "polyline" : "polygon", {
+          points: pointString, fill: shape.shape === "line" ? "none" : color,
+          "fill-opacity": ".14", stroke: color, "stroke-width": "2.5"
+        });
+      }
+    });
+    svg.append(drawing);
+    if (visual.x_label) add("text", { x: n(offsetX + plotWidth / 2), y: 382, "text-anchor": "middle", class: "graph-label" }, visual.x_label);
+    if (visual.y_label) add("text", {
+      x: 14, y: n(offsetY + plotHeight / 2), "text-anchor": "middle", class: "graph-label",
+      transform: `rotate(-90 14 ${n(offsetY + plotHeight / 2)})`
+    }, visual.y_label);
+    const figure = document.createElement("figure");
+    figure.className = "assessment-vector-figure";
+    figure.append(svg);
+    const labeled = shapes.map((shape, index) => ({ shape, index }))
+      .filter(({ shape }) => typeof shape?.label === "string" && shape.label.trim());
+    if (labeled.length) {
+      const legend = document.createElement("figcaption");
+      legend.className = "assessment-vector-legend";
+      labeled.forEach(({ shape, index }) => {
+        const item = document.createElement("span");
+        const marker = document.createElement("i");
+        marker.style.setProperty("--shape-color", colors[index % colors.length]);
+        item.append(marker, document.createTextNode(shape.label));
+        legend.append(item);
+      });
+      figure.append(legend);
+    }
+    return figure;
+  }
+
   function renderVisual(visual) {
     if (!visual || !["graph", "bar_chart", "geometry"].includes(visual.type)) return null;
     if (visual.type === "geometry") {
+      if (["x_min", "x_max", "y_min", "y_max"].some((key) => key in visual)) {
+        return renderCoordinateGeometry(visual);
+      }
       if (!Array.isArray(visual.shapes) || !visual.shapes.length || visual.shapes.length > 4) return null;
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("viewBox", "0 0 520 250");

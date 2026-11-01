@@ -68,6 +68,7 @@
     console.warn("Schedule view preferences could not be loaded.", error);
   }
   let documents = [];
+  const activeDocuments = () => documents.filter((doc) => doc.status !== "archived");
   let schedule = [];
   let profile = {};
   let workspaceUserEmail = "";
@@ -2688,8 +2689,10 @@
       const lessonAssessmentChecks = stages.map((stage) => String(stage.assessment_check || "").trim()).filter(Boolean);
       const lessonKeyAssessment = lesson.key_assessment || "";
       const lessonRubric = lesson.rubric_mark_scheme || draft.rubric_mark_scheme || "";
+      const lessonVisual = assessmentVisual(lesson.visual);
       return [
         fullRow(`<strong>LESSON ${lessonIndex + 1}: ${escapeHtml(lesson.title || title)}</strong>`, "lesson-template-lesson-title"),
+        lessonVisual ? fullRow(lessonVisual, "lesson-template-visual") : "",
         fullRow(`<strong>INTRODUCTION</strong><p><strong>Duration:</strong> ${escapeHtml(stages[0]?.minutes ?? Math.max(1, Math.round(duration * 0.14)))} minutes</p><strong>Purpose of Learning:</strong>${lessonTemplateText(purpose, "By the end of the lesson, learners should demonstrate the selected learning targets.")}`, "lesson-template-intro"),
         stageRows(stages, lessonIndex),
         fullRow("<strong>Key Assessment</strong>", "lesson-template-section-heading"),
@@ -2833,6 +2836,9 @@
           && visual.values.every((value) => Number.isFinite(Number(value))))
         || (visual.type === "graph" && Array.isArray(visual.points)
           && visual.points.filter((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite)).length > 1)
+        || (visual.type === "geometry" && Array.isArray(visual.shapes) && visual.shapes.length > 0
+          && ["x_min", "x_max", "y_min", "y_max"].every((key) => Number.isFinite(Number(visual[key])))
+          && Number(visual.x_min) < Number(visual.x_max) && Number(visual.y_min) < Number(visual.y_max))
         || (visual.type === "line_chart" && Array.isArray(visual.series)
           && visual.series.some((series) => Array.isArray(series?.values) && series.values.length > 1))
       );
@@ -2872,6 +2878,77 @@
         typeof item === "string" ? item : String(item?.label || item?.title || item?.details || "")
       ).filter(Boolean).slice(0, 5);
       return `<div class="presentation-visual presentation-visual-cards" role="img" aria-label="${title}"><strong>${title}</strong><div>${items.map((item, index) => `<span><b>${String(index + 1).padStart(2, "0")}</b>${escapeHtml(item)}</span>`).join("")}</div></div>`;
+    }
+    if (type === "geometry") {
+      const bounds = ["x_min", "x_max", "y_min", "y_max"].map((key) => Number(visual[key]));
+      const shapes = Array.isArray(visual.shapes) ? visual.shapes.slice(0, 8) : [];
+      if (bounds.some((value) => !Number.isFinite(value)) || bounds[0] >= bounds[1] || bounds[2] >= bounds[3] || !shapes.length) return "";
+      const [xMin, xMax, yMin, yMax] = bounds;
+      const width = 720, height = 380, plot = { left: 58, right: 18, top: 24, bottom: 42 };
+      const rangeX = xMax - xMin, rangeY = yMax - yMin;
+      const scale = Math.min((width - plot.left - plot.right) / rangeX, (height - plot.top - plot.bottom) / rangeY);
+      const plotWidth = rangeX * scale, plotHeight = rangeY * scale;
+      const offsetX = plot.left + ((width - plot.left - plot.right) - plotWidth) / 2;
+      const offsetY = plot.top + ((height - plot.top - plot.bottom) - plotHeight) / 2;
+      const px = (value) => offsetX + (value - xMin) * scale;
+      const py = (value) => offsetY + (yMax - value) * scale;
+      const n = (value) => Number(value.toFixed(2));
+      const clipId = `geometry-clip-${Math.random().toString(36).slice(2)}`;
+      const palette = ["#247456", "#d0a64a", "#277da1", "#c85845", "#7256a8", "#4d7c78", "#bf6b40", "#5572a8"];
+      const grid = Array.from({ length: 5 }, (_, index) => {
+        const x = offsetX + plotWidth * index / 4, y = offsetY + plotHeight * index / 4;
+        const xValue = xMin + rangeX * index / 4, yValue = yMax - rangeY * index / 4;
+        return `<line x1="${n(x)}" y1="${n(offsetY)}" x2="${n(x)}" y2="${n(offsetY + plotHeight)}" class="presentation-geometry-grid"/><line x1="${n(offsetX)}" y1="${n(y)}" x2="${n(offsetX + plotWidth)}" y2="${n(y)}" class="presentation-geometry-grid"/><text x="${n(x)}" y="${n(offsetY + plotHeight + 16)}" text-anchor="middle" class="presentation-geometry-label">${n(xValue)}</text><text x="${n(offsetX - 8)}" y="${n(y + 4)}" text-anchor="end" class="presentation-geometry-label">${n(yValue)}</text>`;
+      }).join("");
+      const axisX = xMin <= 0 && xMax >= 0 ? px(0) : offsetX;
+      const axisY = yMin <= 0 && yMax >= 0 ? py(0) : offsetY + plotHeight;
+      const legend = shapes.map((shape, index) => shape && typeof shape.label === "string" && shape.label.trim()
+        ? `<span><i style="--shape-color:${palette[index % palette.length]}"></i>${escapeHtml(shape.label)}</span>`
+        : "").filter(Boolean).join("");
+      const drawings = shapes.map((shape, index) => {
+        if (!shape || typeof shape !== "object") return "";
+        const color = palette[index % palette.length];
+        if (shape.shape === "circle" || shape.shape === "ellipse") {
+          const center = Array.isArray(shape.center) ? shape.center.map(Number) : [];
+          const radii = shape.shape === "circle" ? [Number(shape.radius), Number(shape.radius)] : (Array.isArray(shape.radii) ? shape.radii.map(Number) : []);
+          if (center.length !== 2 || radii.length !== 2 || ![...center, ...radii].every(Number.isFinite) || radii.some((value) => value <= 0)) return "";
+          return `<ellipse cx="${n(px(center[0]))}" cy="${n(py(center[1]))}" rx="${n(radii[0] * scale)}" ry="${n(radii[1] * scale)}" fill="${color}" fill-opacity=".12" stroke="${color}" stroke-width="2.5"/>`;
+        }
+        if (shape.shape === "parabola") {
+          const coefficients = Array.isArray(shape.coefficients) ? shape.coefficients.map(Number) : [];
+          const from = Number(shape.x_min), to = Number(shape.x_max);
+          if (coefficients.length !== 3 || !coefficients.every(Number.isFinite) || !Number.isFinite(from) || !Number.isFinite(to) || from >= to) return "";
+          const [a, b, c] = coefficients;
+          const segments = 12;
+          let d = `M ${n(px(from))} ${n(py(a * from * from + b * from + c))}`;
+          for (let step = 0; step < segments; step++) {
+            const x0 = from + (to - from) * step / segments, x1 = from + (to - from) * (step + 1) / segments;
+            const y0 = a * x0 * x0 + b * x0 + c, y1 = a * x1 * x1 + b * x1 + c;
+            const dx = (x1 - x0) * scale / 3;
+            const control1 = { x: px(x0) + dx, y: py(y0) - (2 * a * x0 + b) * (x1 - x0) * scale / 3 };
+            const control2 = { x: px(x1) - dx, y: py(y1) + (2 * a * x1 + b) * (x1 - x0) * scale / 3 };
+            d += ` C ${n(control1.x)} ${n(control1.y)} ${n(control2.x)} ${n(control2.y)} ${n(px(x1))} ${n(py(y1))}`;
+          }
+          return `<path d="${d}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`;
+        }
+        if (shape.shape === "rectangle") {
+          const left = Number(shape.x_min), right = Number(shape.x_max), top = Number(shape.y_max), bottom = Number(shape.y_min);
+          if (![left, right, top, bottom].every(Number.isFinite) || left >= right || bottom >= top) return "";
+          return `<rect x="${n(px(left))}" y="${n(py(top))}" width="${n((right - left) * scale)}" height="${n((top - bottom) * scale)}" fill="${color}" fill-opacity=".12" stroke="${color}" stroke-width="2.5"/>`;
+        }
+        if (shape.shape === "line" || shape.shape === "triangle") {
+          const points = Array.isArray(shape.points) ? shape.points.filter((point) => Array.isArray(point) && point.length === 2 && point.every((value) => Number.isFinite(Number(value)))) : [];
+          const needed = shape.shape === "line" ? 2 : 3;
+          if (points.length !== needed) return "";
+          const pointString = points.map(([x, y]) => `${n(px(Number(x)))},${n(py(Number(y)))}`).join(" ");
+          const element = shape.shape === "line" ? `<polyline points="${pointString}" fill="none" stroke="${color}" stroke-width="2.5"/>` : `<polygon points="${pointString}" fill="${color}" fill-opacity=".12" stroke="${color}" stroke-width="2.5"/>`;
+          return element;
+        }
+        return "";
+      }).join("");
+      const xLabel = visual.x_label ? `<text x="${n(offsetX + plotWidth / 2)}" y="${height - 3}" text-anchor="middle" class="presentation-geometry-label">${escapeHtml(visual.x_label)}</text>` : "";
+      const yLabel = visual.y_label ? `<text x="12" y="${n(offsetY + plotHeight / 2)}" text-anchor="middle" class="presentation-geometry-label" transform="rotate(-90 12 ${n(offsetY + plotHeight / 2)})">${escapeHtml(visual.y_label)}</text>` : "";
+      return `<div class="presentation-visual presentation-visual-geometry" role="group" aria-label="${title}"><strong>${title}</strong><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${title}"><defs><clipPath id="${clipId}"><rect x="${n(offsetX)}" y="${n(offsetY)}" width="${n(plotWidth)}" height="${n(plotHeight)}"/></clipPath></defs>${grid}<line x1="${n(axisX)}" y1="${n(offsetY)}" x2="${n(axisX)}" y2="${n(offsetY + plotHeight)}" class="presentation-geometry-axis"/><line x1="${n(offsetX)}" y1="${n(axisY)}" x2="${n(offsetX + plotWidth)}" y2="${n(axisY)}" class="presentation-geometry-axis"/><g clip-path="url(#${clipId})">${drawings}</g>${xLabel}${yLabel}</svg>${legend ? `<div class="presentation-geometry-legend">${legend}</div>` : ""}</div>`;
     }
     if (type === "graph" || type === "line_chart") {
       const series = type === "graph"
@@ -4341,7 +4418,8 @@
 
   async function restoreOnlineAssessmentPreview(assessmentId) {
     const savedDocument = documents.find((doc) =>
-      doc.type === "assessment" && String(doc.data?.online_assessment_id) === String(assessmentId)
+      doc.status !== "archived" && doc.type === "assessment"
+      && String(doc.data?.online_assessment_id) === String(assessmentId)
     );
     if (savedDocument && await restoreSavedAssessmentPreview(savedDocument)) return true;
     const message = document.createElement("p");
@@ -5844,6 +5922,7 @@
   const slidesForm = document.getElementById("slides-form");
   const slidesWeekList = document.getElementById("slides-week-list");
   const slidesCurriculumStatus = document.getElementById("slides-curriculum-status");
+  const slidesEditEditor = document.getElementById("slides-edit-editor");
   let slidesWeeklyLessons = [];
   let slidesGeneratedFields = { outcomes: [], indicators: [], points: [] };
   let slidesLoadVersion = 0;
@@ -5859,6 +5938,159 @@
       .filter((entry) => String(entry.section_type || "").toLowerCase() === type)
       .map((entry) => String(entry.title || "").trim())
       .filter(Boolean))];
+  }
+
+  function slideEditValues() {
+    const slides = [...slidesEditEditor.querySelectorAll("[data-slide-edit-index]")].map((card, index) => {
+      const read = (field) => card.querySelector(`[data-slide-field="${field}"]`)?.value || "";
+      const sourceIndex = card.dataset.slideSourceIndex === "" ? null : Number(card.dataset.slideSourceIndex);
+      const original = Number.isInteger(sourceIndex)
+        ? (activeSlideEditDoc?.data?.slides || [])[sourceIndex]
+        : null;
+      let visual;
+      try {
+        visual = JSON.parse(read("visual"));
+      } catch {
+        throw new Error(`Slide ${index + 1} visual must be valid JSON.`);
+      }
+      if (!visual || typeof visual !== "object" || Array.isArray(visual)
+        || !["process", "timeline", "cards", "comparison", "table", "bar_chart", "graph", "line_chart", "geometry"].includes(visual.type)) {
+        throw new Error(`Slide ${index + 1} visual must use a supported visual type.`);
+      }
+      return {
+        ...(original || {}),
+        title: read("title").trim(),
+        key_points: lines(read("key_points")),
+        activity: read("activity").trim(),
+        presenter_notes: read("presenter_notes").trim(),
+        visual,
+        visual_suggestion: ""
+      };
+    });
+    if (!slides.length || slides.length > 20) {
+      throw new Error("A presentation must contain between 1 and 20 slides.");
+    }
+    if (slides.some((slide) => !slide.title || !slide.key_points.length)) {
+      throw new Error("Each slide needs a title and at least one key point.");
+    }
+    const year = slidesEditEditor.querySelector('[name="editYear"]').value;
+    return {
+      ...(activeSlideEditDoc?.data || {}),
+      title: slidesEditEditor.querySelector('[name="editTitle"]').value.trim(),
+      subject: slidesEditEditor.querySelector('[name="editSubject"]').value.trim(),
+      year,
+      year_group: year ? `SHS${year.match(/([123])/i)?.[1] || ""}` : (activeSlideEditDoc?.data?.year_group || ""),
+      template: slidesEditEditor.querySelector('[name="editTemplate"]').value,
+      visual_theme: slidesEditEditor.querySelector('[name="editVisualTheme"]').value,
+      number_of_slides: slides.length,
+      slides
+    };
+  }
+
+  function renderSlideEditEditor(doc) {
+    const data = doc.data || {};
+    const slides = Array.isArray(data.slides) ? data.slides : [];
+    const options = (values, selected) => values.map(([value, label]) =>
+      `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`
+    ).join("");
+    const templates = [
+      ["lesson", "Clear lesson sequence"], ["inquiry", "Inquiry & discovery"], ["worked", "Worked examples"],
+      ["discussion", "Discussion & collaboration"], ["project", "Project-based learning"],
+      ["revision", "Revision & retrieval practice"], ["flipped", "Flipped classroom"]
+    ];
+    const themes = [
+      ["modern", "Modern classroom"], ["editorial", "Editorial"], ["vibrant", "Vibrant workshop"],
+      ["data", "Data studio"], ["minimal", "Minimal"]
+    ];
+    const yearMatch = String(data.year || data.year_group || "").match(/([123])/);
+    const year = yearMatch ? `SHS Year ${yearMatch[1]}` : "";
+    slidesEditEditor.innerHTML = `
+      <div class="slides-edit-heading">
+        <div><span class="eyebrow">EDIT GENERATED CONTENT</span><h3>Presentation slides</h3><p>Edit slide text, speaker notes and visual data directly. Changes appear in the preview as you type.</p></div>
+        <button type="button" class="button button-secondary" data-slide-add>+ Add slide</button>
+      </div>
+      <div class="form-grid slides-edit-metadata">
+        <label class="field field-wide"><span>Presentation title <b>*</b></span><input name="editTitle" required value="${escapeHtml(data.title || doc.title.replace(/\s*·\s*presentation outline$/i, ""))}"></label>
+        <label class="field"><span>SHS year</span><select name="editYear">${options([["", "Not set"], ["SHS Year 1", "SHS Year 1"], ["SHS Year 2", "SHS Year 2"], ["SHS Year 3", "SHS Year 3"]], year)}</select></label>
+        <label class="field"><span>Subject</span><input name="editSubject" value="${escapeHtml(data.subject || "")}"></label>
+        <label class="field"><span>Presentation template</span><select name="editTemplate">${options(templates, data.template || "lesson")}</select></label>
+        <label class="field"><span>Slide design</span><select name="editVisualTheme">${options(themes, data.visual_theme || "modern")}</select></label>
+      </div>
+      <p class="field-help slides-edit-count" data-slide-count></p>
+      <div class="slides-edit-list" data-slide-list></div>
+      <section class="slides-edit-preview"><h4>Live preview</h4><div class="presentation-preview-grid" data-slide-preview></div></section>`;
+    updateSlideEditList(slides.map((slide, index) => ({ ...slide, _sourceIndex: index })));
+  }
+
+  function slideEditCardMarkup(slide, index) {
+    const visual = slide._visualText || (slide.visual && typeof slide.visual === "object"
+      ? JSON.stringify(slide.visual, null, 2)
+      : JSON.stringify({ type: "cards", title: "Key ideas", items: slide.key_points || [] }, null, 2));
+    return `<fieldset class="slides-edit-card" data-slide-edit-index="${index}" data-slide-source-index="${slide._sourceIndex ?? ""}">
+      <legend>Slide ${index + 1}</legend>
+      <div class="slides-edit-card-heading"><strong>Slide ${index + 1}</strong><button type="button" class="text-button" data-slide-remove="${index}">Remove slide</button></div>
+      <label class="field"><span>Slide title <b>*</b></span><input data-slide-field="title" required value="${escapeHtml(slide.title || "")}"></label>
+      <label class="field"><span>Key points · one per line <b>*</b></span><textarea data-slide-field="key_points" rows="4" required>${escapeHtml(Array.isArray(slide.key_points) ? slide.key_points.join("\n") : "")}</textarea></label>
+      <label class="field"><span>Classroom activity</span><textarea data-slide-field="activity" rows="2">${escapeHtml(slide.activity || "")}</textarea></label>
+      <label class="field"><span>Teacher-only presenter notes</span><textarea data-slide-field="presenter_notes" rows="3">${escapeHtml(slide.presenter_notes || slide.speaker_notes || slide.notes || "")}</textarea></label>
+      <label class="field"><span>Visual (JSON)</span><textarea data-slide-field="visual" rows="10" spellcheck="false" required>${escapeHtml(visual)}</textarea><small class="field-help">Edit this slide’s chart, graph, diagram or shapes as JSON. Keep the visual type and data structure valid.</small></label>
+    </fieldset>`;
+  }
+
+  function refreshSlideEditPreview() {
+    const cards = [...slidesEditEditor.querySelectorAll("[data-slide-edit-index]")];
+    slidesEditEditor.querySelector("[data-slide-count]").textContent = `${cards.length} slide${cards.length === 1 ? "" : "s"} · maximum 20`;
+    const preview = slidesEditEditor.querySelector("[data-slide-preview]");
+    if (!preview) return;
+    try {
+      const data = slideEditValues();
+      preview.innerHTML = data.slides.map((slide, index) => presentationSlideMarkup(slide, index, data)).join("");
+    } catch (error) {
+      preview.innerHTML = `<p class="notice notice-amber">${escapeHtml(error.message)}</p>`;
+    }
+  }
+
+  function captureSlideEditCards() {
+    return [...slidesEditEditor.querySelectorAll("[data-slide-edit-index]")].map((card) => {
+      const read = (field) => card.querySelector(`[data-slide-field="${field}"]`)?.value || "";
+      let visual;
+      try {
+        visual = JSON.parse(read("visual"));
+      } catch {
+        visual = undefined;
+      }
+      return {
+        _sourceIndex: card.dataset.slideSourceIndex === "" ? null : Number(card.dataset.slideSourceIndex),
+        title: read("title"),
+        key_points: lines(read("key_points")),
+        activity: read("activity"),
+        presenter_notes: read("presenter_notes"),
+        visual,
+        _visualText: visual ? undefined : read("visual")
+      };
+    });
+  }
+
+  function updateSlideEditList(slides) {
+    slidesEditEditor.querySelector("[data-slide-list]").innerHTML = slides
+      .map((slide, index) => slideEditCardMarkup(slide, index)).join("");
+    slidesEditEditor.querySelectorAll("[data-slide-remove]").forEach((button) => {
+      button.disabled = slides.length <= 1;
+    });
+    slidesEditEditor.querySelector("[data-slide-add]").disabled = slides.length >= 20;
+    refreshSlideEditPreview();
+  }
+
+  function setSlidesEditMode(editing) {
+    const formGrid = slidesForm.querySelector(":scope > .form-grid");
+    slidesForm.classList.toggle("is-editing-slides", editing);
+    slidesEditEditor.hidden = !editing;
+    formGrid.hidden = editing;
+    formGrid.querySelectorAll("input, select, textarea, button").forEach((control) => {
+      control.disabled = editing;
+    });
+    slidesForm.querySelector('[data-ai-generate="slides"]').hidden = editing;
+    slidesForm.querySelector(".form-footer > .save-note").hidden = editing;
   }
 
   function mergeSlideSuggestions(fieldName, suggestions) {
@@ -6360,6 +6592,7 @@
             <li class="presentation-participant-empty">No students have joined yet.</li>
           </ul>
         </section>
+        <p class="presentation-join-notice" data-presentation-join-notice role="status" aria-live="polite"></p>
         <section class="presentation-feedback-card presentation-pace-card" data-presentation-pace-summary aria-label="Class pace responses">
           <h3><i class="fa-solid fa-gauge-high"></i> Class pace <span class="presentation-live-count" data-presentation-feedback-count="pace" hidden></span></h3>
           <div class="presentation-feedback-items" data-presentation-pace-items></div>
@@ -6415,6 +6648,7 @@
     const participantCount = dialog.querySelector("[data-presentation-participant-count]");
     const participantOnline = dialog.querySelector("[data-presentation-participant-online]");
     const participantList = dialog.querySelector("[data-presentation-participant-list]");
+    const participantJoinNotice = dialog.querySelector("[data-presentation-join-notice]");
     const reactionNotice = dialog.querySelector("[data-presentation-reaction-notice]");
     let activeSlide = 0;
     let liveSession = resumedSession ? { id: resumedSession.id, url: resumedSession.url } : null;
@@ -6443,10 +6677,12 @@
     let lastRenderedStateKey = "";
     let lastReactionCounts = null;
     let reactionNoticeTimer = null;
+    let participantJoinNoticeTimer = null;
     let fullscreenActive = false;
     let lastPollSummary = "";
     let lastQuestionSummary = "";
     let lastParticipantSummary = "";
+    let seenParticipantKeys = null;
     const feedbackPanels = { pace: true, poll: true, questions: false };
     const feedbackVisibilityButtons = {};
     let activePollId = "";
@@ -6619,6 +6855,29 @@
       if (summary === lastParticipantSummary) return;
       lastParticipantSummary = summary;
       const students = Array.isArray(participants) ? participants : [];
+      const occurrences = new Map();
+      const studentKeys = students.map((student) => {
+        const base = `${student.name || "Student"}|${student.joined_at || ""}`;
+        const occurrence = occurrences.get(base) || 0;
+        occurrences.set(base, occurrence + 1);
+        return `${base}|${occurrence}`;
+      });
+      if (seenParticipantKeys !== null) {
+        const newNames = students
+          .filter((_, index) => !seenParticipantKeys.has(studentKeys[index]))
+          .map((student) => String(student.name || "Student"));
+        if (newNames.length) {
+          participantJoinNotice.textContent = newNames.length === 1
+            ? `${newNames[0]} joined the live presentation.`
+            : `${newNames.join(", ")} joined the live presentation.`;
+          if (participantJoinNoticeTimer !== null) window.clearTimeout(participantJoinNoticeTimer);
+          participantJoinNoticeTimer = window.setTimeout(() => {
+            participantJoinNotice.textContent = "";
+            participantJoinNoticeTimer = null;
+          }, 8000);
+        }
+      }
+      seenParticipantKeys = new Set(studentKeys);
       participantCount.textContent = String(students.length);
       participantOnline.textContent = `${students.filter((student) => student.online).length} online`;
       participantList.replaceChildren();
@@ -7529,6 +7788,7 @@
       if (pointerUpdateTimer !== null) window.clearTimeout(pointerUpdateTimer);
       if (pointerRenderFrame !== null) window.cancelAnimationFrame(pointerRenderFrame);
       if (reactionNoticeTimer !== null) window.clearTimeout(reactionNoticeTimer);
+      if (participantJoinNoticeTimer !== null) window.clearTimeout(participantJoinNoticeTimer);
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
       window.removeEventListener("resize", handleViewportResize);
       stageResizeObserver?.disconnect();
@@ -7599,44 +7859,17 @@
   async function editSavedSlides(doc) {
     goTo("slides");
     activeSlideEditDoc = doc;
+    document.getElementById("slides-dialog-title").textContent = "Edit presentation slides";
+    document.querySelector("#slides-dialog .lesson-wizard-header p").textContent =
+      "Edit the generated slide content directly, then preview and save your changes.";
     slidesForm.reset();
+    setSlidesEditMode(true);
     slidesGeneratedFields = { outcomes: [], indicators: [], points: [] };
-    const savedData = doc.data || {};
-    const savedLines = (value) => Array.isArray(value) ? value.filter((item) => typeof item === "string") : lines(value);
-    const yearMatch = String(savedData.year || savedData.year_group || "").match(/SHS(?:\s*Year\s*)?([123])/i);
-    slidesForm.elements.namedItem("year").value = yearMatch ? `SHS Year ${yearMatch[1]}` : "";
-    slidesForm.elements.namedItem("subject").value = savedData.subject || "";
-    slidesForm.elements.namedItem("template").value = savedData.template || savedData.presentation_template || "lesson";
-    slidesForm.elements.namedItem("visualTheme").value = savedData.visual_theme || savedData.presentation_visual_theme || "modern";
-    slidesForm.elements.namedItem("slides").value = String(savedData.number_of_slides || savedData.slides?.length || 8);
-    slidesForm.elements.namedItem("title").value = savedData.title || doc.title.replace(/\s*·\s*presentation outline$/i, "");
-    const outcomes = savedLines(savedData.learning_outcomes || savedData.presentation_outcomes);
-    const indicators = savedLines(savedData.learning_indicators || savedData.presentation_indicators);
-    const points = savedLines(savedData.teaching_points || savedData.points);
-    slidesForm.elements.namedItem("outcomes").value = outcomes.join("\n");
-    slidesForm.elements.namedItem("indicators").value = indicators.join("\n");
-    slidesForm.elements.namedItem("points").value = points.join("\n");
-    slidesForm.elements.namedItem("lectureNotes").value = savedLines(savedData.lecture_notes).join("\n");
-    slidesForm.elements.namedItem("visualData").value = savedData.visual_data || savedData.presentation_visual_data || "";
+    slidesEditEditor.innerHTML = "";
+    renderSlideEditEditor(doc);
     slidesForm.dataset.editingId = String(doc.id);
     slidesForm.querySelector('[type="submit"]').textContent = "Save presentation";
-    await loadSlideWeeks();
-    const savedWeeks = savedData.selected_weeks || savedData.selected_week_sections || [];
-    slidesWeekList.querySelectorAll('input[name="slidesWeek"]').forEach((checkbox) => {
-      const week = slidesWeeklyLessons[Number(checkbox.value)];
-      checkbox.checked = savedWeeks.some((saved) =>
-        Number(saved.semester_number || String(saved.term || "").match(/[12]/)?.[0]) === Number(week.semester_number)
-        && Number(saved.week_number || saved.week) === Number(week.week_number)
-        && saved.topic === week.topic
-      );
-    });
-    slidesForm.dataset.editingId = String(doc.id);
-    slidesGeneratedFields = {
-      outcomes,
-      indicators,
-      points
-    };
-    slidesCurriculumStatus.textContent = "Edit the presentation scope or content, then save your changes.";
+    slidesCurriculumStatus.textContent = "";
     planningDialogs.slides.showModal();
   }
 
@@ -8036,8 +8269,33 @@
   slidesForm.elements.namedItem("year").addEventListener("change", loadSlideWeeks);
   slidesForm.elements.namedItem("subject").addEventListener("change", loadSlideWeeks);
   document.getElementById("slides-reload-weeks").addEventListener("click", loadSlideWeeks);
+  slidesEditEditor.addEventListener("input", refreshSlideEditPreview);
+  slidesEditEditor.addEventListener("click", (event) => {
+    const addButton = event.target.closest("[data-slide-add]");
+    const removeButton = event.target.closest("[data-slide-remove]");
+    if (!addButton && !removeButton) return;
+    const slides = captureSlideEditCards();
+    if (addButton && slides.length < 20) {
+      slides.push({
+        _sourceIndex: null,
+        title: `New slide ${slides.length + 1}`,
+        key_points: ["Add a key point"],
+        activity: "",
+        presenter_notes: "",
+        visual: { type: "cards", title: "Key ideas", items: ["Add a visual item"] }
+      });
+    } else if (removeButton && slides.length > 1) {
+      slides.splice(Number(removeButton.dataset.slideRemove), 1);
+    }
+    updateSlideEditList(slides);
+  });
   document.getElementById("slides-new-button").addEventListener("click", () => {
     activeSlideEditDoc = null;
+    setSlidesEditMode(false);
+    slidesEditEditor.replaceChildren();
+    document.getElementById("slides-dialog-title").textContent = "Create a presentation";
+    document.querySelector("#slides-dialog .lesson-wizard-header p").textContent =
+      "Start with a year and subject. Select one or more curriculum weeks to draft outcomes, indicators and teaching points.";
     slidesForm.reset();
     slidesForm.dataset.editingId = "";
     slidesForm.querySelector('[type="submit"]').textContent = "Build slide outline";
@@ -8053,15 +8311,26 @@
   slidesForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!slidesForm.reportValidity()) return;
-    const values = formData(slidesForm);
-    const data = slideOutlineData(values, activeSlideEditDoc?.data || null);
-    const html = renderSlideDocument(data);
-    const title = `${data.title} · presentation outline`;
+    const editing = Boolean(activeSlideEditDoc);
+    let data;
+    let html;
+    let title;
+    try {
+      data = editing
+        ? slideEditValues()
+        : slideOutlineData(formData(slidesForm), null);
+      if (!data.title) throw new Error("Enter a presentation title.");
+      html = renderSlideDocument(data);
+      title = `${data.title} · presentation outline`;
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "The presentation could not be prepared.", "error");
+      return;
+    }
     const submitButton = slidesForm.querySelector('[type="submit"]');
     submitButton.disabled = true;
-    submitButton.textContent = activeSlideEditDoc ? "Saving…" : "Building…";
+    submitButton.textContent = editing ? "Saving…" : "Building…";
     try {
-      if (activeSlideEditDoc) {
+      if (editing) {
         const result = await workspaceRequest(`/api/workspace/documents/${encodeURIComponent(activeSlideEditDoc.id)}`, "PUT", {
           type: "slides",
           title,
@@ -8071,6 +8340,11 @@
         documents = documents.map((item) => item.id === result.document.id ? result.document : item);
         renderAll();
         activeSlideEditDoc = null;
+        setSlidesEditMode(false);
+        slidesEditEditor.replaceChildren();
+        document.getElementById("slides-dialog-title").textContent = "Create a presentation";
+        document.querySelector("#slides-dialog .lesson-wizard-header p").textContent =
+          "Start with a year and subject. Select one or more curriculum weeks to draft outcomes, indicators and teaching points.";
         slidesForm.dataset.editingId = "";
         planningDialogs.slides.close();
         openSavedDocument(result.document);
@@ -8131,13 +8405,14 @@
   window.setInterval(updateDashboardGreeting, 60_000);
   function renderDashboard() {
     updateDashboardGreeting();
-    const lessons = documents.filter((doc) => doc.type === "lesson").length;
+    const active = activeDocuments();
+    const lessons = active.filter((doc) => doc.type === "lesson").length;
     const upcoming = getUpcomingScheduleOccurrences();
-    document.getElementById("stat-documents").textContent = documents.length;
+    document.getElementById("stat-documents").textContent = active.length;
     document.getElementById("stat-lessons").textContent = lessons;
     document.getElementById("stat-schedule").textContent = upcoming.length;
     document.getElementById("stat-schedule-hint").textContent = `Next 7 days · ${schedule.length} timetable ${schedule.length === 1 ? "entry" : "entries"}`;
-    document.getElementById("document-count").textContent = documents.length;
+    document.getElementById("document-count").textContent = active.length;
     document.getElementById("greeting-name").textContent = profile.name ? `, ${profile.name.split(/\s+/)[0]}` : "";
     const upcomingList = document.getElementById("upcoming-activities");
     upcomingList.innerHTML = upcoming.length
@@ -8150,16 +8425,21 @@
       }).join("")
       : `<div class="upcoming-empty"><strong>${schedule.length ? "No classes coming up this week" : "Your timetable is empty"}</strong><span>${schedule.length ? "Your scheduled classes will appear here when they’re due." : "Add your classes to see what’s coming up."}</span><button class="text-button" data-page="schedule">${schedule.length ? "View schedule" : "Build your schedule"} <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#fa-chevron-right"></use></svg></button></div>`;
     const recent = document.getElementById("recent-documents");
-    recent.innerHTML = documents.length ? documents.slice(0, 4).map((doc) => `<div class="recent-item">${iconFor(doc.type)}<div class="recent-item-copy"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(TYPE_LABELS[doc.type])} · ${friendlyDate(doc.createdAt)}</small></div></div>`).join("") : `<div class="empty-state"><div><strong>No documents yet</strong>Your saved drafts will appear here.</div></div>`;
+    recent.innerHTML = active.length ? active.slice(0, 4).map((doc) => `<div class="recent-item">${iconFor(doc.type)}<div class="recent-item-copy"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(TYPE_LABELS[doc.type])} · ${friendlyDate(doc.createdAt)}</small></div></div>`).join("") : `<div class="empty-state"><div><strong>No documents yet</strong>Your saved drafts will appear here.</div></div>`;
   }
 
   function renderDocuments() {
     const list = document.getElementById("document-list");
     const query = document.getElementById("document-search").value.trim().toLowerCase();
     const filter = document.getElementById("document-type-filter").value;
-    const filtered = documents.filter((doc) => (filter === "all" || doc.type === filter) && `${doc.title} ${doc.subject} ${doc.className}`.toLowerCase().includes(query));
+    const statusFilter = document.getElementById("document-status-filter").value;
+    const filtered = documents.filter((doc) => (statusFilter === "archived" ? doc.status === "archived" : doc.status !== "archived")
+      && (filter === "all" || doc.type === filter) && `${doc.title} ${doc.subject} ${doc.className}`.toLowerCase().includes(query));
     if (!filtered.length) {
-      list.innerHTML = `<div class="form-card empty-state"><div><strong>${documents.length ? "No matching documents" : "Your library is empty"}</strong>${documents.length ? "Try a different search or filter." : "Build a lesson plan, assessment, scheme or slide outline to get started."}</div></div>`;
+      const hasDocuments = statusFilter === "archived"
+        ? documents.some((doc) => doc.status === "archived")
+        : activeDocuments().length > 0;
+      list.innerHTML = `<div class="form-card empty-state"><div><strong>${hasDocuments ? "No matching documents" : statusFilter === "archived" ? "No archived documents" : "Your library is empty"}</strong>${hasDocuments ? "Try a different search or filter." : statusFilter === "archived" ? "Archived documents will appear here." : "Build a lesson plan, assessment, scheme or slide outline to get started."}</div></div>`;
       return;
     }
     const action = (symbol, label, attributes, extraClass = "") =>
@@ -8169,7 +8449,13 @@
         ? `${action("file-lines", "PDF", `data-export-document="${escapeHtml(doc.id)}" data-format="pdf"`)}${action("file-lines", "PowerPoint · PPTX", `data-export-document="${escapeHtml(doc.id)}" data-format="pptx"`)}`
         : `${action("file-lines", "Word · DOCX", `data-export-document="${escapeHtml(doc.id)}" data-format="docx"`)}${action("file-lines", "PDF", `data-export-document="${escapeHtml(doc.id)}" data-format="pdf"`)}`;
       const printAction = doc.type === "slides" ? "" : action("file-lines", "Print", `data-print-document="${escapeHtml(doc.id)}"`);
-      return `<article class="document-row">${iconFor(doc.type)}<div class="document-row-copy"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(TYPE_LABELS[doc.type])} · ${escapeHtml(doc.subject || "Subject not set")} · ${friendlyDate(doc.createdAt)}</small></div><div class="document-actions"><details class="document-actions-menu"><summary aria-label="Actions for ${escapeHtml(doc.title)}"><svg class="icon" aria-hidden="true"><use href="${appBase}/assets/icons.svg#fa-bars"></use></svg><span>Actions</span></summary><div class="document-actions-popover" role="group" aria-label="Document actions">${doc.data?.online_assessment_id ? action("users", "Manage class & scores", `data-manage-saved-assessment="${escapeHtml(doc.data.online_assessment_id)}"`) : ""}${action("book-open", "View", `data-view-document="${escapeHtml(doc.id)}"`)}${action("file-lines", "Edit", `data-edit-document="${escapeHtml(doc.id)}"`)}${printAction}<span class="document-actions-divider" aria-hidden="true"></span><span class="document-actions-label">Export as</span>${exportActions}<span class="document-actions-divider" aria-hidden="true"></span>${action("xmark", "Delete", `data-delete-document="${escapeHtml(doc.id)}"`, "document-action-delete")}</div></details></div></article>`;
+      const archived = doc.status === "archived";
+      const statusAction = archived
+        ? action("upload", "Restore", `data-archive-document="${escapeHtml(doc.id)}" data-archived="false"`)
+        : action("folder-open", "Archive", `data-archive-document="${escapeHtml(doc.id)}" data-archived="true"`);
+      const standardActions = archived ? ""
+        : `${doc.data?.online_assessment_id ? action("users", "Manage class & scores", `data-manage-saved-assessment="${escapeHtml(doc.data.online_assessment_id)}"`) : ""}${action("book-open", "View", `data-view-document="${escapeHtml(doc.id)}"`)}${action("file-lines", "Edit", `data-edit-document="${escapeHtml(doc.id)}"`)}${printAction}<span class="document-actions-divider" aria-hidden="true"></span><span class="document-actions-label">Export as</span>${exportActions}`;
+      return `<article class="document-row">${iconFor(doc.type)}<div class="document-row-copy"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(TYPE_LABELS[doc.type])}${archived ? " · Archived" : ""} · ${escapeHtml(doc.subject || "Subject not set")} · ${friendlyDate(doc.createdAt)}</small></div><div class="document-actions"><details class="document-actions-menu"><summary aria-label="Actions for ${escapeHtml(doc.title)}"><svg class="icon" aria-hidden="true"><use href="${appBase}/assets/icons.svg#fa-bars"></use></svg><span>Actions</span></summary><div class="document-actions-popover" role="group" aria-label="Document actions">${standardActions}${statusAction}<span class="document-actions-divider" aria-hidden="true"></span>${action("trash-can", "Delete", `data-delete-document="${escapeHtml(doc.id)}"`, "document-action-delete")}</div></details></div></article>`;
     }).join("");
   }
 
@@ -8312,15 +8598,21 @@
   function renderPlanningLibraries() {
     for (const type of ["assessment", "scheme", "slides"]) {
       const library = document.getElementById(`${type}-library`);
-      const entries = documents.filter((doc) => doc.type === type);
+      const entries = (type === "slides" ? documents : activeDocuments()).filter((doc) => doc.type === type);
+      const slideSearch = type === "slides" ? document.getElementById("slides-library-search").value.trim().toLowerCase() : "";
+      const slideStatus = type === "slides" ? document.getElementById("slides-library-status").value : "active";
+      const visibleEntries = type === "slides"
+        ? entries.filter((doc) => (slideStatus === "all" || (slideStatus === "archived" ? doc.status === "archived" : doc.status !== "archived"))
+          && `${doc.title} ${doc.subject} ${doc.className} ${doc.year}`.toLowerCase().includes(slideSearch))
+        : entries;
       const orderedEntries = type === "assessment"
         ? [...entries.filter((doc) => doc.data?.assessment_builder_draft), ...entries.filter((doc) => !doc.data?.assessment_builder_draft)]
         : entries;
-      const exportActions = (doc) => doc.type === "slides"
-        ? `<button type="button" class="small-button" data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="pdf">PDF</button><button type="button" class="small-button" data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="pptx">PowerPoint · PPTX</button>`
-        : `<button type="button" class="small-button" data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="docx">Word · DOCX</button><button type="button" class="small-button" data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="pdf">PDF</button>`;
       const assessmentAction = (symbol, label, attributes, extraClass = "") =>
         `<button type="button" ${attributes} class="${extraClass}"><svg class="icon" aria-hidden="true"><use href="${appBase}/assets/icons.svg#fa-${symbol}"></use></svg><span>${label}</span></button>`;
+      const exportActions = (doc) => doc.type === "slides"
+        ? `${assessmentAction("file-lines", "PDF", `data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="pdf"`, "small-button")}${assessmentAction("file-lines", "PowerPoint · PPTX", `data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="pptx"`, "small-button")}`
+        : `${assessmentAction("file-lines", "Word · DOCX", `data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="docx"`, "small-button")}${assessmentAction("file-lines", "PDF", `data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="pdf"`, "small-button")}`;
       const assessmentActionMenu = (doc) => {
         const items = [];
         if (doc.data?.assessment_builder_draft) {
@@ -8344,24 +8636,86 @@
         items.push(assessmentAction("xmark", "Delete", `data-delete-assessment-document="${escapeHtml(doc.id)}"`, "document-action-delete"));
         return `<div class="document-actions"><details class="document-actions-menu"><summary aria-label="Actions for ${escapeHtml(doc.title)}"><svg class="icon" aria-hidden="true"><use href="${appBase}/assets/icons.svg#fa-bars"></use></svg><span>Actions</span></summary><div class="document-actions-popover" role="group" aria-label="Assessment actions">${items.join("")}</div></details></div>`;
       };
-      library.innerHTML = entries.length
-        ? `<div class="planning-library-heading"><strong>Saved ${TYPE_LABELS[type].toLocaleLowerCase()} documents</strong><button type="button" class="text-button" data-page="documents">View all ${documents.length} documents</button></div><div class="planning-library-list">${orderedEntries.slice(0, 8).map((doc) => {
+      const slideActionMenu = (doc) => {
+        const archived = doc.status === "archived";
+        const items = [
+          assessmentAction("pen", "Edit", `data-edit-slide-document="${escapeHtml(doc.id)}"`),
+          assessmentAction("eye", "View", `data-open-planning-document="${escapeHtml(doc.id)}"`)
+        ];
+        if (!archived) {
+          items.push('<span class="document-actions-divider" aria-hidden="true"></span>', '<span class="document-actions-label">Export as</span>');
+          items.push(assessmentAction("file-lines", "PDF", `data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="pdf"`));
+          items.push(assessmentAction("file-lines", "PowerPoint · PPTX", `data-saved-assessment-export="${escapeHtml(doc.id)}" data-format="pptx"`));
+        }
+        items.push('<span class="document-actions-divider" aria-hidden="true"></span>');
+        items.push(archived
+          ? assessmentAction("upload", "Restore", `data-archive-slide-document="${escapeHtml(doc.id)}" data-archived="false"`)
+          : assessmentAction("folder-open", "Archive", `data-archive-slide-document="${escapeHtml(doc.id)}" data-archived="true"`));
+        items.push(assessmentAction("trash-can", "Delete", `data-delete-slide-document="${escapeHtml(doc.id)}"`, "document-action-delete"));
+        return `<div class="document-actions"><details class="document-actions-menu"><summary aria-label="Actions for ${escapeHtml(doc.title)}"><svg class="icon" aria-hidden="true"><use href="${appBase}/assets/icons.svg#fa-bars"></use></svg><span>Actions</span></summary><div class="document-actions-popover" role="group" aria-label="Presentation actions">${items.join("")}</div></details></div>`;
+      };
+      library.innerHTML = visibleEntries.length
+        ? `<div class="planning-library-heading"><strong>${type === "slides" ? `${slideStatus === "archived" ? "Archived" : slideStatus === "all" ? "All saved" : "Saved"} presentations` : `Saved ${TYPE_LABELS[type].toLocaleLowerCase()} documents`}</strong><button type="button" class="text-button" data-page="documents">View all ${activeDocuments().length} documents</button></div><div class="planning-library-list">${(type === "slides" ? visibleEntries : orderedEntries.slice(0, 8)).map((doc) => {
           const actions = type === "assessment"
             ? assessmentActionMenu(doc)
-            : `<div class="document-actions assessment-saved-actions">${doc.data?.assessment_builder_draft
-              ? `<button type="button" class="small-button" data-open-planning-document="${escapeHtml(doc.id)}">Continue</button>`
-              : `${doc.data?.online_assessment_id ? `<button type="button" class="small-button" data-share-saved-assessment="${escapeHtml(doc.data.online_assessment_id)}">Copy student link</button><button type="button" class="small-button" data-manage-saved-assessment="${escapeHtml(doc.data.online_assessment_id)}">Manage class &amp; scores</button>` : ""}${doc.type === "slides" ? `<button type="button" class="small-button" data-edit-slide-document="${escapeHtml(doc.id)}">Edit</button>` : ""}${exportActions(doc)}<button type="button" class="small-button" data-open-planning-document="${escapeHtml(doc.id)}">View</button>`}</div>`;
-          return `<article class="document-row">${iconFor(doc.type)}<div class="document-row-copy"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.data?.assessment_builder_draft ? "Saved builder draft" : doc.subject || "Subject not set")} · ${friendlyDate(doc.createdAt)}</small></div>${actions}</article>`;
+            : type === "slides" ? slideActionMenu(doc) : `<div class="document-actions assessment-saved-actions">${doc.data?.assessment_builder_draft
+              ? assessmentAction("file-lines", "Continue", `data-open-planning-document="${escapeHtml(doc.id)}"`, "small-button")
+              : `${doc.data?.online_assessment_id ? `${assessmentAction("arrow-up-right-from-square", "Copy student link", `data-share-saved-assessment="${escapeHtml(doc.data.online_assessment_id)}"`, "small-button")}${assessmentAction("user", "Manage class &amp; scores", `data-manage-saved-assessment="${escapeHtml(doc.data.online_assessment_id)}"`, "small-button")}` : ""}${exportActions(doc)}${assessmentAction("eye", "View", `data-open-planning-document="${escapeHtml(doc.id)}"`, "small-button")}`}</div>`;
+          const archived = doc.status === "archived";
+          return `<article class="document-row">${iconFor(doc.type)}<div class="document-row-copy"><strong>${escapeHtml(doc.title)}</strong><small>${escapeHtml(doc.data?.assessment_builder_draft ? "Saved builder draft" : doc.subject || "Subject not set")}${type === "slides" && archived ? " · Archived" : ""} · ${friendlyDate(doc.createdAt)}</small></div>${actions}</article>`;
         }).join("")}</div>`
-        : `<div class="planning-library-empty">Your saved ${TYPE_LABELS[type].toLocaleLowerCase()} documents will appear here.</div>`;
+        : `<div class="planning-library-empty">${type === "slides"
+          ? entries.length ? "No presentations match your search and status filter." : "Your saved presentations will appear here. Archived presentations can be found with the status filter above."
+          : `Your saved ${TYPE_LABELS[type].toLocaleLowerCase()} documents will appear here.`}</div>`;
     }
   }
 
-  document.getElementById("slides-library").addEventListener("click", (event) => {
+  document.getElementById("slides-library-search").addEventListener("input", renderPlanningLibraries);
+  document.getElementById("slides-library-status").addEventListener("change", renderPlanningLibraries);
+
+  document.getElementById("slides-library").addEventListener("click", async (event) => {
+    const archiveButton = event.target.closest("[data-archive-slide-document]");
+    if (archiveButton) {
+      const doc = documents.find((item) => String(item.id) === archiveButton.dataset.archiveSlideDocument);
+      if (!doc) return;
+      archiveButton.disabled = true;
+      const archived = archiveButton.dataset.archived === "true";
+      try {
+        const result = await workspaceRequest(`/api/workspace/documents/${encodeURIComponent(doc.id)}/archive`, "POST", { archived });
+        documents = documents.map((item) => item.id === doc.id ? { ...item, status: result.document.status } : item);
+        renderAll();
+        showToast(archived ? "Presentation archived. Find and restore it using the presentation status filter." : "Presentation restored to your active presentations.");
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "The presentation could not be archived.", "error");
+        archiveButton.disabled = false;
+      }
+      return;
+    }
+    const deleteButton = event.target.closest("[data-delete-slide-document]");
+    if (deleteButton) {
+      const doc = documents.find((item) => String(item.id) === deleteButton.dataset.deleteSlideDocument);
+      if (!doc) return;
+      if (!await window.akademiAlert.confirm(`Delete "${doc.title}" from your saved presentations? This cannot be undone.`, {
+        title: "Delete saved presentation",
+        confirmText: "Delete"
+      })) return;
+      deleteButton.disabled = true;
+      try {
+        await workspaceRequest(`/api/workspace/documents/${encodeURIComponent(doc.id)}`, "DELETE");
+        documents = documents.filter((item) => item.id !== doc.id);
+        renderAll();
+        showToast("Saved presentation deleted from your workspace.");
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "The presentation could not be deleted.", "error");
+        deleteButton.disabled = false;
+      }
+      return;
+    }
     const button = event.target.closest("[data-edit-slide-document]");
-    if (!button) return;
-    const doc = documents.find((item) => String(item.id) === button.dataset.editSlideDocument);
-    if (doc) openSavedDocument(doc, true);
+    if (button) {
+      const doc = documents.find((item) => String(item.id) === button.dataset.editSlideDocument);
+      if (doc) openSavedDocument(doc, true);
+    }
   });
 
   document.querySelector("[data-dismiss-ai-notice]")?.addEventListener("click", () => {
@@ -8486,7 +8840,7 @@
 
   function renderLessonLibrary() {
     const list = document.getElementById("lesson-library");
-    const lessons = documents.filter((doc) => doc.type === "lesson");
+    const lessons = activeDocuments().filter((doc) => doc.type === "lesson");
     if (!lessons.length) {
       list.innerHTML = `<div class="lesson-library-empty"><span class="lesson-library-empty-icon">${iconMarkup("book-open")}</span><div><strong>Your lesson plans will appear here</strong><p>Start with an SHS year and subject. AI will use verified resource content to draft and save the complete plan.</p></div></div>`;
       return;
@@ -8502,13 +8856,28 @@
 
   document.getElementById("document-search").addEventListener("input", renderDocuments);
   document.getElementById("document-type-filter").addEventListener("change", renderDocuments);
+  document.getElementById("document-status-filter").addEventListener("change", renderDocuments);
   document.getElementById("document-list").addEventListener("click", async (event) => {
     const button = event.target.closest("button");
     if (!button) return;
     button.closest(".document-actions-menu")?.removeAttribute("open");
     if (button.dataset.manageSavedAssessment) return;
-    const doc = documents.find((item) => String(item.id) === (button.dataset.viewDocument || button.dataset.editDocument || button.dataset.exportDocument || button.dataset.printDocument || button.dataset.deleteDocument));
+    const doc = documents.find((item) => String(item.id) === (button.dataset.viewDocument || button.dataset.editDocument || button.dataset.exportDocument || button.dataset.printDocument || button.dataset.deleteDocument || button.dataset.archiveDocument));
     if (!doc) return;
+    if (button.dataset.archiveDocument) {
+      button.disabled = true;
+      try {
+        const archived = button.dataset.archived === "true";
+        const result = await workspaceRequest(`/api/workspace/documents/${encodeURIComponent(doc.id)}/archive`, "POST", { archived });
+        documents = documents.map((item) => item.id === doc.id ? { ...item, status: result.document.status } : item);
+        renderAll();
+        showToast(archived ? "Document archived. Restore it from My documents whenever you need it." : "Document restored to your workspace.");
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "The document archive status could not be changed.", "error");
+        button.disabled = false;
+      }
+      return;
+    }
     if (button.dataset.deleteDocument) {
       if (!(await window.akademiAlert.confirm(`Delete "${doc.title}" from your account?`, {
         title: "Delete saved document",
@@ -8918,7 +9287,7 @@
         weeklyStatus.textContent = "Enter at least two characters of the subject name to load weekly sections.";
         return;
       }
-      const matchingSchemes = documents.filter((doc) => doc.type === "scheme"
+      const matchingSchemes = activeDocuments().filter((doc) => doc.type === "scheme"
         && normalizeCatalogSubject(doc.subject || doc.data?.subject) === normalizeCatalogSubject(subject)
         && Array.isArray(doc.data?.weeks));
       const schemeForYear = (year) => matchingSchemes

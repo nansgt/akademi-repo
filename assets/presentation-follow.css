@@ -32,6 +32,7 @@
 .presentation-follow-stage .presentation-chart-unit { font-size: 13px; }
 .presentation-follow-stage .presentation-visual-cards > div { flex-wrap: wrap; gap: 10px; }
 .presentation-follow-stage .presentation-visual-cards > div > span { flex: 1 1 180px; min-height: 72px; padding: 12px; font-size: clamp(13px, 1.5vw, 17px); }
+.presentation-follow-stage .presentation-visual-geometry > svg { max-height: 28vh; }
 .presentation-follow-stage .presentation-visual-cards b { font-size: 12px; }
 .presentation-follow-line-chart { display: block; width: min(100%, 820px); height: auto; margin: 0 auto; overflow: visible; }
 .presentation-follow-chart-grid { stroke: color-mix(in srgb, var(--presentation-accent) 15%, transparent); stroke-width: 1; }
@@ -42,6 +43,10 @@
 .presentation-follow-chart-legend { display: flex; flex-wrap: wrap; gap: 12px 20px; font-size: 13px; }
 .presentation-follow-chart-legend > span { display: inline-flex; align-items: center; gap: 7px; }
 .presentation-follow-chart-legend i { width: 12px; height: 12px; border-radius: 50%; background: var(--chart-color); }
+.presentation-follow-geometry { display: block; width: min(100%, 820px); height: auto; margin: 0 auto; overflow: hidden; color: var(--ink); }
+.presentation-follow-geometry-grid { stroke: color-mix(in srgb, var(--forest) 15%, transparent); stroke-width: 1; }
+.presentation-follow-geometry-axis { stroke: color-mix(in srgb, var(--forest) 65%, transparent); stroke-width: 2; }
+.presentation-follow-geometry-label { fill: currentColor; font-size: 13px; }
 .presentation-follow-annotations { position: absolute; z-index: 4; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .presentation-follow-laser { width: 22px; height: 22px; }
 .presentation-follow-poll { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, var(--paper), color-mix(in srgb, var(--forest) 4%, var(--paper))); box-shadow: 0 10px 28px rgb(22 57 43 / 8%); }
@@ -228,10 +233,23 @@
   column-gap: 2cqi;
   row-gap: .7cqi;
 }
+.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) {
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+}
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) header { grid-column: 1; grid-row: 1; }
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) h4 { grid-column: 1; grid-row: 2; }
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) ul { grid-column: 1; grid-row: 3; align-self: center; }
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-visual { grid-column: 2; grid-row: 1 / 6; align-self: center; height: fit-content; }
+.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-visual {
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+}
+.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-media-column {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, .35fr) minmax(0, 1.65fr);
+  height: 100%;
+}
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) > p { grid-column: 1; grid-row: 4; margin: auto 0 0; }
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-follow-reveal-progress { grid-column: 1; grid-row: 5; margin-top: .4cqi; }
 .presentation-follow-stage .presentation-visual { min-height: 0; max-height: 100%; gap: .8cqi; margin-top: 0; padding: 1.2cqi; overflow: hidden; }
@@ -240,13 +258,13 @@
 .presentation-follow-stage .presentation-visual-table-scroll { min-height: 0; overflow: auto; }
 .presentation-follow-stage .presentation-visual-table table { min-width: 0; font-size: clamp(9px, .9cqi, 11px); }
 .presentation-follow-stage .presentation-visual-table th, .presentation-follow-stage .presentation-visual-table td { max-width: none; padding: clamp(4px, .4cqi, 7px) clamp(5px, .5cqi, 9px); white-space: normal; overflow-wrap: anywhere; }
-.presentation-follow-stage .presentation-chart-bars { height: clamp(110px, 40cqi, 240px); min-height: 0; gap: clamp(5px, 1cqi, 12px); padding: 10px 8px 0; }
-.presentation-follow-stage .presentation-visual-chart { grid-template-rows: auto auto auto; }
-.presentation-follow-stage .presentation-chart-column { grid-template-rows: 20px minmax(0, 1fr) 30px; }
+.presentation-follow-stage .presentation-chart-bars { height: 100%; min-height: 0; gap: clamp(5px, 1cqi, 12px); padding: 10px 8px 0; }
+.presentation-follow-stage .presentation-visual-chart { grid-template-rows: auto minmax(0, 1fr) auto; }
+.presentation-follow-stage .presentation-chart-column { grid-template-rows: clamp(20px, 3cqi, 32px) minmax(0, 1fr) clamp(30px, 4cqi, 42px); }
 .presentation-follow-stage .presentation-chart-column > span,
 .presentation-follow-stage .presentation-chart-column > small,
 .presentation-follow-stage .presentation-chart-unit,
-.presentation-follow-stage .presentation-visual-graph > small { font-size: clamp(8px, .8cqi, 10px); }
+.presentation-follow-stage .presentation-visual-graph > small { font-size: clamp(11px, 1.1cqi, 15px); }
 .presentation-follow-stage .presentation-visual-cards > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -258,8 +276,12 @@
 .presentation-follow-stage .presentation-visual-cards > div > span { min-height: 0; padding: clamp(8px, 1cqi, 14px); font-size: clamp(11px, 1.1cqi, 14px); }
 .presentation-follow-stage .presentation-visual-cards { grid-template-rows: auto auto; }
 .presentation-follow-stage .presentation-visual-cards b { font-size: clamp(9px, 1cqi, 12px); }
-.presentation-follow-stage .presentation-visual-graph { grid-template-rows: auto auto auto; }
-.presentation-follow-stage .presentation-visual-graph > div { height: clamp(110px, 18cqi, 190px); min-height: 110px; margin: 4px 8px; }
+.presentation-follow-stage .presentation-visual-graph { grid-template-rows: auto minmax(0, 1fr) auto; }
+.presentation-follow-stage .presentation-visual-graph > div { height: 100%; min-height: 0; margin: 4px 8px; }
+.presentation-follow-stage .presentation-follow-line-chart { width: 100%; height: 100%; min-height: 0; }
+.presentation-follow-stage .presentation-visual-geometry > svg { width: 100%; height: 100%; max-height: 100%; }
+.presentation-follow-stage .presentation-follow-geometry-legend { gap: 8px 18px; font-size: clamp(11px, 1.1cqi, 15px); }
+.presentation-follow-stage .presentation-follow-geometry-legend i { flex-basis: clamp(9px, 1cqi, 14px); width: clamp(9px, 1cqi, 14px); height: clamp(9px, 1cqi, 14px); }
 .presentation-follow-pace-toggle {
   display: inline-flex;
   align-items: center;

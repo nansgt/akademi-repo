@@ -911,24 +911,154 @@ final class OnlineAssessmentService
         $clean = ['type' => $visual['type']];
         if ($clean['type'] === 'geometry') {
             $shapes = $visual['shapes'] ?? null;
-            if (!is_array($shapes) || $shapes === [] || count($shapes) > 4) {
-                throw new RuntimeException('A geometry diagram must contain one to four shapes.', 422);
+            if (!is_array($shapes) || $shapes === [] || count($shapes) > 8) {
+                throw new RuntimeException('A geometry diagram must contain one to eight shapes.', 422);
             }
-            foreach ($shapes as $shape) {
-                if (!is_array($shape)) {
-                    throw new RuntimeException('A geometry diagram contains an unsupported shape or label.', 422);
+            $coordinateMode = array_key_exists('x_min', $visual) || array_key_exists('x_max', $visual)
+                || array_key_exists('y_min', $visual) || array_key_exists('y_max', $visual);
+            if ($coordinateMode) {
+                $range = [];
+                foreach (['x_min', 'x_max', 'y_min', 'y_max'] as $key) {
+                    $value = $visual[$key] ?? null;
+                    if (!is_numeric($value) || !is_finite((float)$value) || abs((float)$value) > 10000) {
+                        throw new RuntimeException('A geometry axis range is invalid.', 422);
+                    }
+                    $range[$key] = (float)$value;
                 }
-                $labels = $shape['labels'] ?? [];
-                if (!in_array($shape['shape'] ?? '', ['triangle', 'rectangle', 'circle', 'line'], true)
-                    || !is_array($labels) || count($labels) > 4) {
-                    throw new RuntimeException('A geometry diagram contains an unsupported shape or label.', 422);
+                if ($range['x_min'] >= $range['x_max'] || $range['y_min'] >= $range['y_max']) {
+                    throw new RuntimeException('A geometry axis range must increase from minimum to maximum.', 422);
                 }
-                foreach ($labels as $label) {
-                    if (!is_string($label) || mb_strlen($label) > 20) {
+                $clean['x_min'] = $range['x_min'];
+                $clean['x_max'] = $range['x_max'];
+                $clean['y_min'] = $range['y_min'];
+                $clean['y_max'] = $range['y_max'];
+                foreach ($shapes as $shape) {
+                    if (!is_array($shape) || !in_array($shape['shape'] ?? '', [
+                        'triangle', 'rectangle', 'circle', 'ellipse', 'line', 'parabola',
+                    ], true)) {
+                        throw new RuntimeException('A geometry diagram contains an unsupported shape.', 422);
+                    }
+                    $label = $shape['label'] ?? '';
+                    if (!is_string($label) || mb_strlen($label) > 60) {
                         throw new RuntimeException('A geometry diagram label is invalid.', 422);
                     }
+                    $normalized = ['shape' => $shape['shape'], 'label' => trim($label)];
+                    $coordinate = static function (mixed $value) use ($range): ?float {
+                        if (!is_numeric($value) || !is_finite((float)$value)
+                            || abs((float)$value) > 10000) {
+                            return null;
+                        }
+                        return (float)$value;
+                    };
+                    $pointList = static function (mixed $points, int $count) use ($coordinate, $range): ?array {
+                        if (!is_array($points) || count($points) !== $count) {
+                            return null;
+                        }
+                        $cleanPoints = [];
+                        foreach ($points as $point) {
+                            if (!is_array($point) || count($point) !== 2) {
+                                return null;
+                            }
+                            $x = $coordinate($point[0] ?? null);
+                            $y = $coordinate($point[1] ?? null);
+                            if ($x === null || $y === null || $x < $range['x_min'] || $x > $range['x_max']
+                                || $y < $range['y_min'] || $y > $range['y_max']) {
+                                return null;
+                            }
+                            $cleanPoints[] = [$x, $y];
+                        }
+                        return $cleanPoints;
+                    };
+                    if (in_array($shape['shape'], ['line', 'triangle'], true)) {
+                        $points = $pointList($shape['points'] ?? null, $shape['shape'] === 'line' ? 2 : 3);
+                        if ($points === null) {
+                            throw new RuntimeException('A geometry diagram contains invalid or out-of-range points.', 422);
+                        }
+                        $normalized['points'] = $points;
+                    } elseif (in_array($shape['shape'], ['circle', 'ellipse'], true)) {
+                        $center = $pointList([$shape['center'] ?? null], 1);
+                        $radii = $shape['shape'] === 'circle'
+                            ? [$coordinate($shape['radius'] ?? null), $coordinate($shape['radius'] ?? null)]
+                            : (is_array($shape['radii'] ?? null) && count($shape['radii']) === 2
+                                ? [$coordinate($shape['radii'][0]), $coordinate($shape['radii'][1])]
+                                : []);
+                        if ($center === null || count($radii) !== 2 || in_array(null, $radii, true)
+                            || $radii[0] <= 0 || $radii[1] <= 0
+                            || $center[0][0] - $radii[0] < $range['x_min']
+                            || $center[0][0] + $radii[0] > $range['x_max']
+                            || $center[0][1] - $radii[1] < $range['y_min']
+                            || $center[0][1] + $radii[1] > $range['y_max']) {
+                            throw new RuntimeException('A geometry diagram contains invalid or out-of-range circle dimensions.', 422);
+                        }
+                        $normalized['center'] = $center[0];
+                        if ($shape['shape'] === 'circle') {
+                            $normalized['radius'] = $radii[0];
+                        } else {
+                            $normalized['radii'] = $radii;
+                        }
+                    } elseif ($shape['shape'] === 'rectangle') {
+                        $coordinates = [];
+                        foreach (['x_min', 'x_max', 'y_min', 'y_max'] as $key) {
+                            $coordinates[$key] = $coordinate($shape[$key] ?? null);
+                        }
+                        if (in_array(null, $coordinates, true)
+                            || $coordinates['x_min'] >= $coordinates['x_max']
+                            || $coordinates['y_min'] >= $coordinates['y_max']
+                            || $coordinates['x_min'] < $range['x_min'] || $coordinates['x_max'] > $range['x_max']
+                            || $coordinates['y_min'] < $range['y_min'] || $coordinates['y_max'] > $range['y_max']) {
+                            throw new RuntimeException('A geometry diagram contains invalid or out-of-range rectangle dimensions.', 422);
+                        }
+                        $normalized += $coordinates;
+                    } else {
+                        $coefficients = $shape['coefficients'] ?? null;
+                        $from = $coordinate($shape['x_min'] ?? null);
+                        $to = $coordinate($shape['x_max'] ?? null);
+                        if (!is_array($coefficients) || count($coefficients) !== 3 || $from === null || $to === null
+                            || $from >= $to || $from < $range['x_min'] || $to > $range['x_max']) {
+                            throw new RuntimeException('A geometry parabola has invalid coefficients or horizontal bounds.', 422);
+                        }
+                        $coefficients = array_map($coordinate, array_values($coefficients));
+                        if (in_array(null, $coefficients, true)) {
+                            throw new RuntimeException('A geometry parabola has invalid coefficients.', 422);
+                        }
+                        [$a, $b, $c] = $coefficients;
+                        $yAt = static fn(float $x): float => $a * $x * $x + $b * $x + $c;
+                        $sampleXs = [$from, $to];
+                        if ($a !== 0.0) {
+                            $vertex = -$b / (2 * $a);
+                            if ($vertex > $from && $vertex < $to) {
+                                $sampleXs[] = $vertex;
+                            }
+                        }
+                        foreach ($sampleXs as $x) {
+                            $y = $yAt($x);
+                            if (!is_finite($y) || $y < $range['y_min'] || $y > $range['y_max']) {
+                                throw new RuntimeException('A geometry parabola falls outside its axis bounds.', 422);
+                            }
+                        }
+                        $normalized['coefficients'] = $coefficients;
+                        $normalized['x_min'] = $from;
+                        $normalized['x_max'] = $to;
+                    }
+                    $clean['shapes'][] = $normalized;
                 }
-                $clean['shapes'][] = ['shape' => $shape['shape'], 'labels' => array_values($labels)];
+            } else {
+                foreach ($shapes as $shape) {
+                    if (!is_array($shape)) {
+                        throw new RuntimeException('A geometry diagram contains an unsupported shape or label.', 422);
+                    }
+                    $labels = $shape['labels'] ?? [];
+                    if (!in_array($shape['shape'] ?? '', ['triangle', 'rectangle', 'circle', 'line'], true)
+                        || !is_array($labels) || count($labels) > 4) {
+                        throw new RuntimeException('A geometry diagram contains an unsupported shape or label.', 422);
+                    }
+                    foreach ($labels as $label) {
+                        if (!is_string($label) || mb_strlen($label) > 20) {
+                            throw new RuntimeException('A geometry diagram label is invalid.', 422);
+                        }
+                    }
+                    $clean['shapes'][] = ['shape' => $shape['shape'], 'labels' => array_values($labels)];
+                }
             }
         } elseif ($clean['type'] === 'bar_chart') {
             $labels = $visual['labels'] ?? null;
@@ -981,7 +1111,7 @@ final class OnlineAssessmentService
         $clean += $range + ['points' => $cleanPoints];
         }
         foreach (['title', 'x_label', 'y_label'] as $field) {
-            if ($clean['type'] !== 'graph' && $field !== 'title') continue;
+            if (!in_array($clean['type'], ['graph', 'geometry'], true) && $field !== 'title') continue;
             $value = $visual[$field] ?? '';
             if (!is_string($value) || mb_strlen($value) > 120) {
                 throw new RuntimeException('A graph title or axis label is invalid.', 422);

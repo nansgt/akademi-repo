@@ -749,9 +749,7 @@
         if (line && `${line} ${word}`.length > limit) {
           lines.push(line);
           line = word;
-        } else {
-          line = line ? `${line} ${word}` : word;
-        }
+        } else line = line ? `${line} ${word}` : word;
       }
       if (line) lines.push(line);
       return (lines.length ? lines : [""]).slice(0, maxLines);
@@ -1571,6 +1569,73 @@
           if (index) line(x(points[index - 1][0]), yy(points[index - 1][1]), px, py, "0.09 0.42 0.65", 1.5);
           pages[pages.length - 1].push(`0.09 0.42 0.65 rg ${px - 2} ${pageHeight - py - 2} 4 4 re f\n`);
         });
+      } else if (["x_min", "x_max", "y_min", "y_max"].every((key) => Number.isFinite(Number(visual[key])))) {
+        const [xMin, xMax, yMin, yMax] = [visual.x_min, visual.x_max, visual.y_min, visual.y_max].map(Number);
+        const shapes = Array.isArray(visual.shapes) ? visual.shapes.slice(0, 8) : [];
+        if (shapes.length && xMin < xMax && yMin < yMax) {
+          const plotX = boxX + 42, plotY = boxTop + 29, plotW = boxWidth - 58, plotH = 98;
+          const scale = Math.min(plotW / (xMax - xMin), plotH / (yMax - yMin));
+          const contentW = (xMax - xMin) * scale, contentH = (yMax - yMin) * scale;
+          const offsetX = (plotW - contentW) / 2, offsetY = (plotH - contentH) / 2;
+          const px = (value) => plotX + offsetX + (value - xMin) * scale;
+          const py = (value) => plotY + offsetY + (yMax - value) * scale;
+          const colors = ["0.14 0.45 0.33", "0.82 0.63 0.29", "0.15 0.49 0.63", "0.78 0.35 0.25",
+            "0.45 0.34 0.66", "0.30 0.49 0.47", "0.75 0.42 0.25", "0.33 0.45 0.66"];
+          for (let tick = 0; tick <= 4; tick++) {
+            const tx = plotX + offsetX + contentW * tick / 4, ty = plotY + offsetY + contentH * tick / 4;
+            line(tx, plotY + offsetY, tx, plotY + offsetY + contentH, "0.86 0.89 0.86", 0.35);
+            line(plotX + offsetX, ty, plotX + offsetX + contentW, ty, "0.86 0.89 0.86", 0.35);
+          }
+          const axisX = xMin <= 0 && xMax >= 0 ? px(0) : plotX + offsetX;
+          const axisY = yMin <= 0 && yMax >= 0 ? py(0) : plotY + offsetY + contentH;
+          line(axisX, plotY + offsetY, axisX, plotY + offsetY + contentH, "0.35 0.45 0.39", 0.9);
+          line(plotX + offsetX, axisY, plotX + offsetX + contentW, axisY, "0.35 0.45 0.39", 0.9);
+          shapes.forEach((item, index) => {
+            if (!item || typeof item !== "object") return;
+            const color = colors[index % colors.length];
+            if (item.shape === "circle" || item.shape === "ellipse") {
+              const center = Array.isArray(item.center) ? item.center.map(Number) : [];
+              const radii = item.shape === "circle" ? [Number(item.radius), Number(item.radius)]
+                : Array.isArray(item.radii) ? item.radii.map(Number) : [];
+              if (center.length !== 2 || radii.length !== 2 || ![...center, ...radii].every(Number.isFinite)) return;
+              const cx = px(center[0]), cy = pageHeight - py(center[1]), rx = radii[0] * scale, ry = radii[1] * scale;
+              const k = 0.55228475;
+              pages[pages.length - 1].push(`${color} RG 1.3 w ${cx + rx} ${cy} m ${cx + rx} ${cy + ry * k} ${cx + rx * k} ${cy + ry} ${cx} ${cy + ry} c ${cx - rx * k} ${cy + ry} ${cx - rx} ${cy + ry * k} ${cx - rx} ${cy} c ${cx - rx} ${cy - ry * k} ${cx - rx * k} ${cy - ry} ${cx} ${cy - ry} c ${cx + rx * k} ${cy - ry} ${cx + rx} ${cy - ry * k} ${cx + rx} ${cy} c S\n`);
+            } else if (item.shape === "parabola") {
+              const coefficients = Array.isArray(item.coefficients) ? item.coefficients.map(Number) : [];
+              const from = Number(item.x_min), to = Number(item.x_max);
+              if (coefficients.length !== 3 || !coefficients.every(Number.isFinite) || !Number.isFinite(from) || !Number.isFinite(to) || from >= to) return;
+              const [a, b, c] = coefficients, yAt = (xValue) => a * xValue * xValue + b * xValue + c;
+              let path = `${px(from)} ${pageHeight - py(yAt(from))} m `;
+              for (let step = 0; step < 12; step++) {
+                const x0 = from + (to - from) * step / 12, x1 = from + (to - from) * (step + 1) / 12;
+                const y0 = yAt(x0), y1 = yAt(x1), dx = (x1 - x0) * scale / 3;
+                path += `${px(x0) + dx} ${pageHeight - (py(y0) - (2 * a * x0 + b) * (x1 - x0) * scale / 3)} ${px(x1) - dx} ${pageHeight - (py(y1) + (2 * a * x1 + b) * (x1 - x0) * scale / 3)} ${px(x1)} ${pageHeight - py(y1)} c `;
+              }
+              pages[pages.length - 1].push(`${color} RG 1.7 w ${path}S\n`);
+            } else if (item.shape === "rectangle") {
+              const left = Number(item.x_min), right = Number(item.x_max), bottom = Number(item.y_min), top = Number(item.y_max);
+              if (![left, right, bottom, top].every(Number.isFinite) || left >= right || bottom >= top) return;
+              line(px(left), py(top), px(right), py(top), color, 1.3);
+              line(px(right), py(top), px(right), py(bottom), color, 1.3);
+              line(px(right), py(bottom), px(left), py(bottom), color, 1.3);
+              line(px(left), py(bottom), px(left), py(top), color, 1.3);
+            } else if (item.shape === "line" || item.shape === "triangle") {
+              const points = Array.isArray(item.points) ? item.points : [];
+              const count = item.shape === "line" ? 2 : 3;
+              if (points.length !== count || points.some((point) => !Array.isArray(point) || point.length !== 2
+                || point.some((value) => !Number.isFinite(Number(value))))) return;
+              const plotted = points.map(([xValue, yValue]) => [px(Number(xValue)), py(Number(yValue))]);
+              plotted.slice(1).forEach((point, pointIndex) => line(plotted[pointIndex][0], plotted[pointIndex][1], point[0], point[1], color, 1.3));
+              if (item.shape === "triangle") line(plotted[2][0], plotted[2][1], plotted[0][0], plotted[0][1], color, 1.3);
+            }
+          });
+          shapes.forEach((item, index) => {
+            const label = String(item?.label || `Shape ${index + 1}`).replace(/\s+/g, " ").slice(0, 22);
+            const column = index % 4, row = Math.floor(index / 4), cellW = boxWidth / 4;
+            pages[pages.length - 1].push(text(label, boxX + column * cellW + 7, boxTop + 143 + row * 10, 6.5, true, colors[index % colors.length]));
+          });
+        }
       } else {
         const shapes = Array.isArray(visual.shapes) ? visual.shapes : [];
         const slot = boxWidth / Math.max(1, shapes.length);
@@ -2137,6 +2202,72 @@
           text(visual.x_label || "x", graph.x, graph.y + graph.h + 15, 8, muted, false, graph.w, "center");
           text(visual.y_label || "y", plot.x, graph.y - 14, 8, muted);
         } else text("Add plotted points to illustrate this relationship.", plot.x + 10, plot.y + 80, 11, muted, false, plot.w - 20, "center");
+      } else if (visualType === "geometry") {
+        const xMin = Number(visual.x_min), xMax = Number(visual.x_max);
+        const yMin = Number(visual.y_min), yMax = Number(visual.y_max);
+        const shapes = Array.isArray(visual.shapes) ? visual.shapes.slice(0, 8) : [];
+        if (shapes.length && [xMin, xMax, yMin, yMax].every(Number.isFinite) && xMin < xMax && yMin < yMax) {
+          const graph = { x: plot.x + 200000 * scale, y: plot.y + 100000 * scale, w: plot.w - 400000 * scale, h: plot.h - 700000 * scale };
+          const rangeX = xMax - xMin, rangeY = yMax - yMin;
+          const unit = Math.min(graph.w / rangeX, graph.h / rangeY);
+          const contentW = rangeX * unit, contentH = rangeY * unit;
+          const offsetX = (graph.w - contentW) / 2, offsetY = (graph.h - contentH) / 2;
+          const px = (value) => graph.x + offsetX + (value - xMin) * unit;
+          const py = (value) => graph.y + offsetY + (yMax - value) * unit;
+          const colors = [accent, secondary, "52796F", "E76F51", "5271A2", "6A994E", "BC6C25", "7B2CBF"];
+          for (let tick = 0; tick <= 4; tick++) {
+            const x = graph.x + offsetX + contentW * tick / 4, y = graph.y + offsetY + contentH * tick / 4;
+            line(x, graph.y + offsetY, x, graph.y + offsetY + contentH, pale, 0.6);
+            line(graph.x + offsetX, y, graph.x + offsetX + contentW, y, pale, 0.6);
+          }
+          const axisX = xMin <= 0 && xMax >= 0 ? px(0) : graph.x + offsetX;
+          const axisY = yMin <= 0 && yMax >= 0 ? py(0) : graph.y + offsetY + contentH;
+          line(axisX, graph.y + offsetY, axisX, graph.y + offsetY + contentH, muted, 1);
+          line(graph.x + offsetX, axisY, graph.x + offsetX + contentW, axisY, muted, 1);
+          shapes.forEach((shape, index) => {
+            if (!shape || typeof shape !== "object") return;
+            const color = colors[index % colors.length];
+            if (shape.shape === "circle" || shape.shape === "ellipse") {
+              const center = Array.isArray(shape.center) ? shape.center.map(Number) : [];
+              const radii = shape.shape === "circle" ? [Number(shape.radius), Number(shape.radius)] : (Array.isArray(shape.radii) ? shape.radii.map(Number) : []);
+              if (center.length !== 2 || radii.length !== 2 || ![...center, ...radii].every(Number.isFinite) || radii.some((value) => value <= 0)) return;
+              const cx = px(center[0]), cy = H - py(center[1]), rx = radii[0] * unit, ry = radii[1] * unit, k = 0.55228475;
+              commands.push(`${rgb(color)} RG 1.5 w ${cx + rx} ${cy} m ${cx + rx} ${cy + ry * k} ${cx + rx * k} ${cy + ry} ${cx} ${cy + ry} c ${cx - rx * k} ${cy + ry} ${cx - rx} ${cy + ry * k} ${cx - rx} ${cy} c ${cx - rx} ${cy - ry * k} ${cx - rx * k} ${cy - ry} ${cx} ${cy - ry} c ${cx + rx * k} ${cy - ry} ${cx + rx} ${cy - ry * k} ${cx + rx} ${cy} c S\n`);
+            } else if (shape.shape === "parabola") {
+              const coefficients = Array.isArray(shape.coefficients) ? shape.coefficients.map(Number) : [];
+              const from = Number(shape.x_min), to = Number(shape.x_max);
+              if (coefficients.length !== 3 || !coefficients.every(Number.isFinite) || !Number.isFinite(from) || !Number.isFinite(to) || from >= to) return;
+              const [a, b, c] = coefficients, yAt = (x) => a * x * x + b * x + c;
+              let path = `${px(from)} ${H - py(yAt(from))} m `;
+              for (let step = 0; step < 12; step++) {
+                const x0 = from + (to - from) * step / 12, x1 = from + (to - from) * (step + 1) / 12;
+                const y0 = yAt(x0), y1 = yAt(x1), dx = (x1 - x0) * unit / 3;
+                path += `${px(x0) + dx} ${H - (py(y0) - (2 * a * x0 + b) * (x1 - x0) * unit / 3)} ${px(x1) - dx} ${H - (py(y1) + (2 * a * x1 + b) * (x1 - x0) * unit / 3)} ${px(x1)} ${H - py(y1)} c `;
+              }
+              commands.push(`${rgb(color)} RG 2.2 w ${path}S\n`);
+            } else if (shape.shape === "rectangle") {
+              const left = Number(shape.x_min), right = Number(shape.x_max), bottom = Number(shape.y_min), top = Number(shape.y_max);
+              if (![left, right, bottom, top].every(Number.isFinite) || left >= right || bottom >= top) return;
+              const x1 = px(left), x2 = px(right), y1 = py(top), y2 = py(bottom);
+              line(x1, y1, x2, y1, color, 1.5); line(x2, y1, x2, y2, color, 1.5);
+              line(x2, y2, x1, y2, color, 1.5); line(x1, y2, x1, y1, color, 1.5);
+            } else if (shape.shape === "line" || shape.shape === "triangle") {
+              const points = Array.isArray(shape.points) ? shape.points : [], needed = shape.shape === "line" ? 2 : 3;
+              if (points.length !== needed || points.some((point) => !Array.isArray(point) || point.length !== 2 || point.some((value) => !Number.isFinite(Number(value))))) return;
+              const plotted = points.map(([x, y]) => [px(Number(x)), py(Number(y))]);
+              plotted.slice(1).forEach((point, pointIndex) => line(plotted[pointIndex][0], plotted[pointIndex][1], point[0], point[1], color, 1.5));
+              if (shape.shape === "triangle") line(plotted[2][0], plotted[2][1], plotted[0][0], plotted[0][1], color, 1.5);
+            }
+          });
+          if (visual.x_label) text(visual.x_label, graph.x, graph.y + graph.h + 12, 7.5, muted, false, graph.w, "center");
+          if (visual.y_label) text(visual.y_label, plot.x, graph.y - 12, 7.5, muted);
+          shapes.forEach((shape, index) => {
+            if (!shape || typeof shape !== "object") return;
+            const column = index % 4, row = Math.floor(index / 4), cellW = graph.w / 4;
+            const label = String(shape.label || `Shape ${index + 1}`).replace(/\s+/g, " ").slice(0, 22);
+            text(label, graph.x + column * cellW, graph.y + graph.h + (320000 + row * 115000) * scale, 7, colors[index % colors.length], true, cellW - 20000 * scale);
+          });
+        } else text("Geometry data unavailable", plot.x + 15, plot.y + 80, 12, muted, false, plot.w - 30, "center");
       } else {
         const items = (Array.isArray(visual.steps) ? visual.steps : Array.isArray(visual.items) ? visual.items : [])
           .map((item) => typeof item === "string" ? item : String(item?.label || item?.title || item?.details || ""))
@@ -2265,6 +2396,8 @@
       const flipV = y2 < y1 ? ' flipV="1"' : "";
       return `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${esc(name)}"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr><p:spPr><a:xfrm${flipH}${flipV}><a:off x="${Math.min(x1, x2)}" y="${Math.min(y1, y2)}"/><a:ext cx="${Math.max(1, Math.abs(x2 - x1))}" cy="${Math.max(1, Math.abs(y2 - y1))}"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="${width}"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:ln></p:spPr></p:cxnSp>`;
     };
+    const pathShape = (id, name, x, y, cx, cy, pathCommands, color, width = 30000) =>
+      `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${esc(name)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${Math.round(x)}" y="${Math.round(y)}"/><a:ext cx="${Math.max(1, Math.round(cx))}" cy="${Math.max(1, Math.round(cy))}"/></a:xfrm><a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="l" t="t" r="r" b="b"/><a:pathLst><a:path w="${Math.max(1, Math.round(cx))}" h="${Math.max(1, Math.round(cy))}" fill="none" stroke="1">${pathCommands}</a:path></a:pathLst></a:custGeom><a:noFill/><a:ln w="${width}"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:prstDash val="solid"/></a:ln></p:spPr></p:sp>`;
     const addSlide = (slide, slideIndex) => {
       const shapes = [];
       let id = 2;
@@ -2374,6 +2507,80 @@
           add("Graph x axis", gx, gy + gh + 100000, gw, 190000, String(visual.x_label || "x"), { size: 850, color: muted, align: "ctr" });
           add("Graph y axis", plotX, gy + 300000, 300000, 180000, String(visual.y_label || "y"), { size: 850, color: muted, align: "ctr" });
         } else add("Graph data guidance", plotX, plotY + 500000, plotW, 650000, "Add coordinate pairs or series values to plot a graph.", { size: 1250, color: muted, align: "ctr" });
+      } else if (visualType === "geometry") {
+        const xMin = Number(visual.x_min), xMax = Number(visual.x_max);
+        const yMin = Number(visual.y_min), yMax = Number(visual.y_max);
+        const shapesForDiagram = Array.isArray(visual.shapes) ? visual.shapes.slice(0, 8) : [];
+        if (shapesForDiagram.length && [xMin, xMax, yMin, yMax].every(Number.isFinite) && xMin < xMax && yMin < yMax) {
+          const gx = plotX + 200000, gy = plotY + 100000, gw = plotW - 400000, gh = plotH - 700000;
+          const rangeX = xMax - xMin, rangeY = yMax - yMin;
+          const scale = Math.min(gw / rangeX, gh / rangeY);
+          const contentW = rangeX * scale, contentH = rangeY * scale;
+          const offsetX = (gw - contentW) / 2, offsetY = (gh - contentH) / 2;
+          const px = (value) => gx + offsetX + (value - xMin) * scale;
+          const py = (value) => gy + offsetY + (yMax - value) * scale;
+          const geometryColors = [accent, "D4A373", "52796F", "E76F51", "5271A2", "6A994E", "BC6C25", "7B2CBF"];
+          for (let tick = 0; tick <= 4; tick++) {
+            const x = gx + offsetX + contentW * tick / 4;
+            const y = gy + offsetY + contentH * tick / 4;
+            line(`Geometry grid x ${tick}`, x, gy + offsetY, x, gy + offsetY + contentH, pale, 9000);
+            line(`Geometry grid y ${tick}`, gx + offsetX, y, gx + offsetX + contentW, y, pale, 9000);
+          }
+          const axisX = xMin <= 0 && xMax >= 0 ? px(0) : gx + offsetX;
+          const axisY = yMin <= 0 && yMax >= 0 ? py(0) : gy + offsetY + contentH;
+          line("Geometry y axis", axisX, gy + offsetY, axisX, gy + offsetY + contentH, muted, 18000);
+          line("Geometry x axis", gx + offsetX, axisY, gx + offsetX + contentW, axisY, muted, 18000);
+          shapesForDiagram.forEach((item, index) => {
+            const color = geometryColors[index % geometryColors.length];
+            if (item.shape === "circle" || item.shape === "ellipse") {
+              const center = Array.isArray(item.center) ? item.center.map(Number) : [];
+              const radii = item.shape === "circle" ? [Number(item.radius), Number(item.radius)] : (Array.isArray(item.radii) ? item.radii.map(Number) : []);
+              if (center.length !== 2 || radii.length !== 2 || ![...center, ...radii].every(Number.isFinite) || radii.some((value) => value <= 0)) return;
+              add(`Geometry ${item.shape} ${index + 1}`, px(center[0] - radii[0]), py(center[1] + radii[1]), 2 * radii[0] * scale, 2 * radii[1] * scale, "", { geometry: "ellipse", outline: color });
+            } else if (item.shape === "rectangle") {
+              const left = Number(item.x_min), right = Number(item.x_max), bottom = Number(item.y_min), top = Number(item.y_max);
+              if (![left, right, bottom, top].every(Number.isFinite) || left >= right || bottom >= top) return;
+              add(`Geometry rectangle ${index + 1}`, px(left), py(top), (right - left) * scale, (top - bottom) * scale, "", { outline: color });
+            } else if (item.shape === "line" || item.shape === "triangle") {
+              const points = Array.isArray(item.points) ? item.points : [];
+              const required = item.shape === "line" ? 2 : 3;
+              if (points.length !== required || points.some((point) => !Array.isArray(point) || point.length !== 2 || point.some((value) => !Number.isFinite(Number(value))))) return;
+              const plotted = points.map(([x, y]) => [px(Number(x)), py(Number(y))]);
+              plotted.slice(1).forEach((point, pointIndex) => line(`Geometry ${item.shape} ${index + 1} segment ${pointIndex + 1}`, plotted[pointIndex][0], plotted[pointIndex][1], point[0], point[1], color, 25000));
+              if (item.shape === "triangle") line(`Geometry triangle ${index + 1} close`, plotted[2][0], plotted[2][1], plotted[0][0], plotted[0][1], color, 25000);
+            } else if (item.shape === "parabola") {
+              const coefficients = Array.isArray(item.coefficients) ? item.coefficients.map(Number) : [];
+              const from = Number(item.x_min), to = Number(item.x_max);
+              if (coefficients.length !== 3 || !coefficients.every(Number.isFinite) || !Number.isFinite(from) || !Number.isFinite(to) || from >= to) return;
+              const [a, b, c] = coefficients;
+              let commands = "";
+              const localX = (value) => offsetX + (value - xMin) * scale;
+              const localY = (value) => offsetY + (yMax - value) * scale;
+              const startY = a * from * from + b * from + c;
+              commands += `<a:moveTo><a:pt x="${Math.round(localX(from))}" y="${Math.round(localY(startY))}"/></a:moveTo>`;
+              const segments = 12;
+              for (let segment = 0; segment < segments; segment++) {
+                const x0 = from + (to - from) * segment / segments, x1 = from + (to - from) * (segment + 1) / segments;
+                const y0 = a * x0 * x0 + b * x0 + c, y1 = a * x1 * x1 + b * x1 + c;
+                const dx = (x1 - x0) * scale / 3;
+                const c1 = [localX(x0) + dx, localY(y0) - (2 * a * x0 + b) * (x1 - x0) * scale / 3];
+                const c2 = [localX(x1) - dx, localY(y1) + (2 * a * x1 + b) * (x1 - x0) * scale / 3];
+                commands += `<a:cubicBezTo><a:pt x="${Math.round(c1[0])}" y="${Math.round(c1[1])}"/><a:pt x="${Math.round(c2[0])}" y="${Math.round(c2[1])}"/><a:pt x="${Math.round(localX(x1))}" y="${Math.round(localY(y1))}"/></a:cubicBezTo>`;
+              }
+              shapes.push(pathShape(id++, `Geometry parabola ${index + 1}`, gx, gy, gw, gh, commands, color));
+            }
+          });
+          if (visual.x_label) add("Geometry x label", gx + offsetX, gy + offsetY + contentH + 120000, contentW, 180000, String(visual.x_label), { size: 800, color: muted, align: "ctr" });
+          if (visual.y_label) add("Geometry y label", plotX, gy, 250000, 180000, String(visual.y_label), { size: 800, color: muted, align: "ctr" });
+          shapesForDiagram.forEach((item, index) => {
+            const column = index % 4, row = Math.floor(index / 4), cellW = gw / 4;
+            const legendX = gx + column * cellW, legendY = gy + gh + 320000 + row * 115000;
+            const color = geometryColors[index % geometryColors.length];
+            const label = String(item.label || `Shape ${index + 1}`).replace(/\s+/g, " ").slice(0, 22);
+            add(`Geometry legend swatch ${index + 1}`, legendX, legendY + 35000, 55000, 55000, "", { fill: color });
+            add(`Geometry legend label ${index + 1}`, legendX + 70000, legendY, cellW - 80000, 130000, label, { size: 750, color: muted, padding: 0 });
+          });
+        } else add("Geometry guidance", plotX, plotY + 500000, plotW, 650000, "Add labelled coordinate bounds and shapes to draw this diagram.", { size: 1250, color: muted, align: "ctr" });
       } else if (["process", "timeline", "cards", "comparison"].includes(visualType)) {
         const items = (visual.steps || visual.items || []).map((item) => typeof item === "string" ? item : String(item.label || item.title || item.details || "")).filter(Boolean).slice(0, 5);
         const vertical = items.length > 3;

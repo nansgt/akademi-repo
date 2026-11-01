@@ -11,7 +11,7 @@ $canManageRoles = in_array('superadmin', $adminUser['roles'], true);
   <meta name="app-base-path" content="<?= e(app_base_path()) ?>">
   <meta name="csrf-token" content="<?= e(\Akademi\Security\Csrf::token()) ?>">
   <link rel="icon" href="<?= e(app_url('assets/icon.svg')) ?>" type="image/svg+xml">
-  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=54')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=149')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/notifications.css?v=20')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/auth.css?v=34')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/appearance.css?v=6')) ?>">

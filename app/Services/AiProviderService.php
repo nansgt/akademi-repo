@@ -275,8 +275,10 @@ final class AiProviderService
             'lesson' => 'Use the server-verified semester/week, topic, strand, sub-strand, focal areas, all content standards and learning indicators and learning outcomes in teacher_request as the lesson scope. Do not add curriculum details that are absent from that verified scope or relabel an outcome as an indicator. Cover every selected content standard in its assigned lesson; distribute standards across the requested lessons as specified and do not silently omit any. Follow the supplied lesson-template excerpt exactly where available; the lesson document uses an eight-column table with sections in this order: subject/title, class size/week/duration/form, strand, sub-strand, focal area(s), content standard(s), learning outcomes, learning indicators, essential questions, pedagogical strategies, teaching and learning resources, key notes on differentiation, learner needs identified, then one complete lesson section per requested lesson with introduction, stages, key assessment, formative assessment, rubric/mark scheme and reflection/remarks. Return JSON with title, essential_questions (string array of 2-4 questions for the week), pedagogical_strategies (string array), learning_outcomes (string array aligned to selected curriculum targets without inventing official wording), prior_knowledge, resources (string array), lessons (array containing exactly number_of_lessons entries; each entry has title, lesson_stages (array of objects with name, minutes integer, teacher_activity, learner_activity, assessment_check), key_assessment, rubric_mark_scheme, reflection_remarks). Every lesson must build on the previous lesson toward the selected weekly learning indicators and outcomes. The selected focal area(s) apply across all lessons and must be developed progressively, not treated as unrelated weekly topics. Each lesson_stages array must progress from introduction through learner practice and closure, and its minutes must total duration_minutes for that lesson. Return differentiation (object with support, core, extension). Include practical formative checks and respect the class, readiness, available resources and teacher instructions.',
             'assessment' => 'Create an original assessment from the selected weekly sections and curriculum topics only. Use resources for every year in selected_year_groups; keep each question within its listed year and do not transfer year-specific standards. Follow the selected assessment_type and question_format exactly. Allowed question_type values are mcq, worked, extended, brief, and other. For extended format, write an open-ended, developed response prompt requiring explanation, reasoning or evidence; question_type must be exactly "extended", never "worked" or "brief". Worked means a structured problem that requires showing steps; brief means a concise response; MCQ means exactly four non-empty options and a zero-based integer correct_option. Mixed format means use the corresponding entry in the batch_question_types array for each question in order; do not substitute another type. Generate exactly question_count questions and one matching marking_guide entry per question, numbered from 1. Use question_mark_allocations in order; total_marks must equal their sum. Each question must contain prompt, question_type, marks, and a concise expected_answer; include options and correct_option only for MCQ. Return compact JSON only with title, instructions, questions, marking_guide (question_number, expected_response, marks), curriculum_outline as an empty array, and total_marks. Do not add Markdown, HTML, scripts, citations, or image URLs, and do not reproduce past-paper or textbook questions.',
             'scheme' => 'Return JSON with title and weeks (array of objects with term, week integer within semester, week_kind ("teaching", "mid_semester", "revision", or "end_semester"), strand, sub_strand, topic, focal_areas (string array), content_standard, learning_indicators (string array), activities, resources (string array), assessment). The academic year has exactly two semesters. Follow the requested scheme_period and teaching_weeks_per_semester exactly; this number is derived from verified weekly allocations for the requested subject and semester. Each semester has that many curriculum teaching weeks plus three event weeks: place Mid-Semester Examination after the first half of teaching weeks, then Revision Week and End of Semester Examination after the final teaching week. For full_year, return both semesters using their separately supplied teaching_week_counts and restart week numbering at 1 for each semester. For semester, cover only the requested semester_number. Use the exact event topics "Mid-Semester Examination", "Revision Week", and "End of Semester Examination". Teaching weeks must have at least one source-supported focal area; event weeks may have empty focal_areas and learning_indicators. Follow the supplied verified scheme template for its columns and section order when present. Do not invent calendar dates. Sequence curriculum-supported topics across the supplied number of teaching weeks; do not invent official codes or indicators. If an exact official indicator is not present in the supplied curriculum, use a concise teacher-confirmation note rather than fabricate one.',
-            'slides' => 'Honor presentation_template, presentation_visual_theme, number_of_slides, selected_week_sections, presentation_outcomes, presentation_indicators and teaching_points. The server has checked selected_week_sections against verified weekly curriculum data; treat those selected topics and focal areas as the authoritative scope for this presentation. Cover all weekly sections assigned to the current slide batch, but do not invent other official curriculum wording. Return JSON with title and exactly number_of_slides slides (array of objects with title, key_points (string array), activity, visual_suggestion, and a required structured visual on every slide). Do not omit visual or use visual_suggestion as a substitute: select a useful visual for the actual slide content. Use process/timeline/cards/comparison for conceptual teaching; use worked-example tables for procedures; use bar_chart or table for suitable supplied datasets; use graph for mathematical relationships only with explicitly labeled illustrative values or teacher-supplied data. Supported visuals: process/timeline/cards/comparison with steps or items (string array); table with headers (string array) and rows (array of string arrays); bar_chart with labels (string array), values (numeric array), and optional value_label; graph with points ([[x,y], ...]), optional x_label/y_label and numeric bounds; line_chart with series (array of {name, values (numeric array)}). Keep visual titles, labels and data concise and classroom-ready. Use only teacher-provided presentation_visual_data for real-world numeric values; do not invent statistics, measurements or observations. If no data was supplied, create conceptual diagrams, process steps, qualitative comparisons, or worked-example tables without unsupported empirical values. Values used to plot a graph may be illustrative mathematical examples only when explicitly labeled as such. Never return SVG, HTML, scripts, image URLs, or unsupported visual types.',
+            'slides' => 'Honor presentation_template, presentation_visual_theme, number_of_slides, selected_week_sections, presentation_outcomes, presentation_indicators and teaching_points. The server has checked selected_week_sections against verified weekly curriculum data; treat those selected topics and focal areas as the authoritative scope for this presentation. Cover all weekly sections assigned to the current slide batch, but do not invent other official curriculum wording. Return JSON with title and exactly number_of_slides slides (array of objects with title, key_points (string array), activity, visual_suggestion, and a required structured visual on every slide). Do not omit visual or use visual_suggestion as a substitute: select a useful visual for the actual slide content. Use process/timeline/cards/comparison for conceptual teaching; use worked-example tables for procedures; use bar_chart or table for suitable supplied datasets; use graph for measured/teacher-supplied plotted data. For mathematical functions or geometry (quadratic functions, parabolas, circles, transformations, and Venn diagrams), use the geometry visual instead of approximating curves with a few graph points or disconnected straight segments. A geometry visual has x_min, x_max, y_min, y_max and shapes (1-8 objects): circle {shape:"circle", center:[x,y], radius, label?}; ellipse {shape:"ellipse", center:[x,y], radii:[rx,ry], label?}; parabola {shape:"parabola", coefficients:[a,b,c], x_min, x_max, label?} for y=ax^2+bx+c; line {shape:"line", points:[[x1,y1],[x2,y2]], label?}; triangle {shape:"triangle", points:[[x1,y1],[x2,y2],[x3,y3]], label?}; rectangle {shape:"rectangle", x_min, x_max, y_min, y_max, label?}. Include x_label/y_label where useful. Venn diagrams are overlapping labeled circles in one geometry visual; do not separate or approximate them with cards. The axes ranges must contain all depicted shape coordinates, and radii/coefficients must be numeric. Other supported visuals: table with headers (string array) and rows (array of string arrays); bar_chart with labels (string array), values (numeric array), and optional value_label; graph with points ([[x,y], ...]), optional x_label/y_label and numeric bounds; line_chart with series (array of {name, values (numeric array)}). Keep visual titles, labels and data concise; use short labels and never overlap text with shapes or other labels. Use only teacher-provided presentation_visual_data for real-world numeric values; do not invent statistics, measurements or observations. Mathematical coordinates and coefficients may be illustrative only when labeled as such. If no data was supplied, create conceptual diagrams, process steps, qualitative comparisons, or worked-example tables without unsupported empirical values. Never return SVG, HTML, scripts, image URLs, or unsupported visual types.',
         ];
+        $definitions['lesson'] .= ' Each lesson may include one optional visual object when it materially helps teach the selected content. Use structured vector types only: {type:"geometry", title, x_min, x_max, y_min, y_max, shapes:[...]}, {type:"graph", title, x_min, x_max, y_min, y_max, points:[[x,y], ...], x_label, y_label}, or {type:"bar_chart", title, labels:[...], values:[...]}. Geometry shapes may be circles {shape:"circle", center:[x,y], radius, label}, ellipses {shape:"ellipse", center:[x,y], radii:[rx,ry], label}, parabolas {shape:"parabola", coefficients:[a,b,c], x_min, x_max, label}, lines {shape:"line", points:[[x1,y1],[x2,y2]], label}, triangles {shape:"triangle", points:[[x1,y1],[x2,y2],[x3,y3]], label}, and rectangles {shape:"rectangle", x_min, x_max, y_min, y_max, label}. Use overlapping labeled circles for Venn diagrams. Plot curves as parabolas, never as disconnected line segments. Include concise labels and bounds that contain every shape; do not invent real-world chart data, and do not return SVG, HTML, or image URLs.';
+        $definitions['assessment'] .= ' When a question materially benefits from a diagram, include an optional structured visual on that question. Use {type:"bar_chart", title, labels:[...], values:[...]}, {type:"graph", title, x_min, x_max, y_min, y_max, points:[[x,y], ...], x_label, y_label}, or {type:"geometry", title, x_min, x_max, y_min, y_max, shapes:[...]}. Geometry shapes may be circles {shape:"circle", center:[x,y], radius, label}, ellipses {shape:"ellipse", center:[x,y], radii:[rx,ry], label}, parabolas {shape:"parabola", coefficients:[a,b,c], x_min, x_max, label}, lines {shape:"line", points:[[x1,y1],[x2,y2]], label}, triangles {shape:"triangle", points:[[x1,y1],[x2,y2],[x3,y3]], label}, and rectangles {shape:"rectangle", x_min, x_max, y_min, y_max, label}. Use overlapping labeled circles for Venn diagrams. Plot mathematical curves as parabolas, not as connected point segments. Keep labels concise and avoid overlap; use only data supplied in the question or verified curriculum context, never fabricate measurements. Do not return SVG, HTML, or image URLs.';
         if (!isset($definitions[$type])) {
             throw new RuntimeException('Choose a supported teaching draft type.', 422);
         }
@@ -518,17 +520,7 @@ final class AiProviderService
                 throw new RuntimeException('Choose between 5 and 20 slides for one presentation.', 422);
             }
             $weekSections = $planningInput['selected_week_sections'] ?? [];
-            $batchCount = (int)ceil($requestedSlideCount / 6);
-            $slideNumbers = range(1, $requestedSlideCount);
-            $slideBatches = array_map(
-                static fn(int $batchIndex): array => array_slice(
-                    $slideNumbers,
-                    (int)floor($batchIndex * $requestedSlideCount / $batchCount),
-                    (int)floor(($batchIndex + 1) * $requestedSlideCount / $batchCount)
-                        - (int)floor($batchIndex * $requestedSlideCount / $batchCount)
-                ),
-                range(0, $batchCount - 1)
-            );
+            $slideBatches = array_chunk(range(1, $requestedSlideCount), 1);
             $allSlides = [];
             $title = '';
             foreach ($slideBatches as $batchIndex => $slideNumbers) {
@@ -537,8 +529,12 @@ final class AiProviderService
                 if ($weekSections !== []) {
                     $weekStart = (int)floor($batchIndex * count($weekSections) / count($slideBatches));
                     $weekEnd = (int)floor(($batchIndex + 1) * count($weekSections) / count($slideBatches));
-                    $batchWeeks = array_slice($weekSections, $weekStart, max(0, $weekEnd - $weekStart));
-                    $batchInput['selected_week_sections'] = $batchWeeks !== [] ? $batchWeeks : $weekSections;
+                    $batchWeeks = array_slice($weekSections, $weekStart, $weekEnd - $weekStart);
+                    if ($batchWeeks === []) {
+                        $weekIndex = min(count($weekSections) - 1, $weekStart);
+                        $batchWeeks = [$weekSections[$weekIndex]];
+                    }
+                    $batchInput['selected_week_sections'] = $batchWeeks;
                 }
                 $batchSystem = $system . ' Generate only presentation slides '
                     . $slideNumbers[0] . ' through ' . $slideNumbers[array_key_last($slideNumbers)]
@@ -553,7 +549,7 @@ final class AiProviderService
                             . count($slideNumbers) . ' valid slides and all required structured visual fields.';
                     }
                     try {
-                        $response = trim($this->generate($makeMessages($batchInput, $attemptSystem), 0.2));
+                        $response = trim($this->generate($makeMessages($batchInput, $attemptSystem), 0.2, 1800));
                         $label = 'presentation slides ' . $slideNumbers[0] . '-'
                             . $slideNumbers[array_key_last($slideNumbers)];
                         $batchDraft = $this->decodePlanningDraft($response, $label);
@@ -952,7 +948,7 @@ final class AiProviderService
             if (!is_array($lessons) || count($lessons) !== $lessonCount) {
                 throw new RuntimeException('The lesson draft does not contain the requested number of complete lessons. Generate it again or choose a smaller number.', 503);
             }
-            foreach ($lessons as $lesson) {
+            foreach ($lessons as &$lesson) {
                 if (!is_array($lesson) || !is_string($lesson['title'] ?? null) || trim($lesson['title']) === '') {
                     throw new RuntimeException('One of the requested lessons is missing its title.', 503);
                 }
@@ -973,7 +969,16 @@ final class AiProviderService
                 if (!$duration || $minutes !== $duration) {
                     throw new RuntimeException('The generated lesson timings do not add up to the requested duration for every lesson.', 503);
                 }
+                if (isset($lesson['visual'])) {
+                    try {
+                        $lesson['visual'] = OnlineAssessmentService::cleanQuestionVisual($lesson['visual']);
+                    } catch (RuntimeException $error) {
+                        throw new RuntimeException('A generated lesson contains an invalid chart, graph or geometry visual.', 503, $error);
+                    }
+                }
             }
+            unset($lesson);
+            $draft['lessons'] = $lessons;
         } elseif ($type === 'slides') {
             $requestedSlideCount = filter_var($input['number_of_slides'] ?? null, FILTER_VALIDATE_INT);
             $slides = $draft['slides'] ?? null;
@@ -981,7 +986,7 @@ final class AiProviderService
                 || !is_array($slides) || count($slides) !== $requestedSlideCount) {
                 throw new RuntimeException('The generated presentation does not contain the requested number of slides. Please generate it again.', 503);
             }
-            $visualTypes = ['process', 'timeline', 'cards', 'comparison', 'table', 'bar_chart', 'graph', 'line_chart'];
+            $visualTypes = ['process', 'timeline', 'cards', 'comparison', 'table', 'bar_chart', 'graph', 'line_chart', 'geometry'];
             foreach ($draft['slides'] as &$slide) {
                 if (!is_array($slide) || !is_string($slide['title'] ?? null) || trim($slide['title']) === ''
                     || !is_array($slide['key_points'] ?? null)
@@ -1043,6 +1048,120 @@ final class AiProviderService
                     if (!is_array($items) || $items === [] || count($items) > 8 || array_filter($items, 'is_string') !== $items) {
                         throw new RuntimeException('The presentation contains invalid diagram labels. Please generate it again.', 503);
                     }
+                } elseif ($visual['type'] === 'geometry') {
+                    $bounds = [];
+                    foreach (['x_min', 'x_max', 'y_min', 'y_max'] as $key) {
+                        $value = $visual[$key] ?? null;
+                        if ((!is_int($value) && !is_float($value)) || !is_finite((float)$value) || abs((float)$value) > 10000) {
+                            throw new RuntimeException('The presentation contains invalid geometry bounds. Please generate it again.', 503);
+                        }
+                        $bounds[$key] = (float)$value;
+                    }
+                    if ($bounds['x_min'] >= $bounds['x_max'] || $bounds['y_min'] >= $bounds['y_max']) {
+                        throw new RuntimeException('The presentation contains invalid geometry bounds. Please generate it again.', 503);
+                    }
+                    $shapes = $visual['shapes'] ?? null;
+                    if (!is_array($shapes) || $shapes === [] || count($shapes) > 8) {
+                        throw new RuntimeException('The presentation contains invalid geometry shapes. Please generate it again.', 503);
+                    }
+                    $shapeBounds = $bounds;
+                    foreach ($shapes as $shape) {
+                        if (!is_array($shape) || !in_array($shape['shape'] ?? null, ['circle', 'ellipse', 'parabola', 'line', 'triangle', 'rectangle'], true)
+                            || (isset($shape['label']) && (!is_string($shape['label']) || mb_strlen($shape['label']) > 120))) {
+                            throw new RuntimeException('The presentation contains an unsupported geometry shape. Please generate it again.', 503);
+                        }
+                        if (in_array($shape['shape'], ['line', 'triangle'], true)) {
+                            $expectedPoints = $shape['shape'] === 'line' ? 2 : 3;
+                            $points = $shape['points'] ?? null;
+                            if (!is_array($points) || count($points) !== $expectedPoints
+                                || array_filter($points, static fn(mixed $point): bool => !is_array($point) || count($point) !== 2) !== []) {
+                                throw new RuntimeException('The presentation contains invalid geometry points. Please generate it again.', 503);
+                            }
+                        }
+                        $numbers = match ($shape['shape']) {
+                            'circle' => $shape['center'] ?? null,
+                            'ellipse' => [...(is_array($shape['center'] ?? null) ? $shape['center'] : []), ...(is_array($shape['radii'] ?? null) ? $shape['radii'] : [])],
+                            'parabola' => [...(is_array($shape['coefficients'] ?? null) ? $shape['coefficients'] : []), $shape['x_min'] ?? null, $shape['x_max'] ?? null],
+                            'line', 'triangle' => array_merge([], ...(is_array($shape['points'] ?? null)
+                                ? array_map(static fn(mixed $point): array => is_array($point) ? $point : [], $shape['points'])
+                                : [])),
+                            'rectangle' => [$shape['x_min'] ?? null, $shape['x_max'] ?? null, $shape['y_min'] ?? null, $shape['y_max'] ?? null],
+                        };
+                        $expectedCount = match ($shape['shape']) {
+                            'circle' => 2,
+                            'ellipse' => 4,
+                            'parabola' => 5,
+                            'line' => 4,
+                            'triangle' => 6,
+                            'rectangle' => 4,
+                        };
+                        if (!is_array($numbers) || count($numbers) !== $expectedCount
+                            || array_filter($numbers, static fn(mixed $value): bool => (!is_int($value) && !is_float($value))
+                                || !is_finite((float)$value) || abs((float)$value) > 10000) !== []) {
+                            throw new RuntimeException('The presentation contains invalid geometry coordinates. Please generate it again.', 503);
+                        }
+                        if (($shape['shape'] === 'circle' && (!isset($shape['radius']) || !is_numeric($shape['radius']) || (float)$shape['radius'] <= 0 || (float)$shape['radius'] > 10000))
+                            || ($shape['shape'] === 'ellipse' && (min((float)$shape['radii'][0], (float)$shape['radii'][1]) <= 0))
+                            || ($shape['shape'] === 'parabola' && (float)$shape['x_min'] >= (float)$shape['x_max'])
+                            || ($shape['shape'] === 'rectangle' && ((float)$shape['x_min'] >= (float)$shape['x_max'] || (float)$shape['y_min'] >= (float)$shape['y_max']))) {
+                            throw new RuntimeException('The presentation contains invalid geometry dimensions. Please generate it again.', 503);
+                        }
+                        if (in_array($shape['shape'], ['circle', 'ellipse'], true)) {
+                            $center = $shape['center'];
+                            $radii = $shape['shape'] === 'circle'
+                                ? [(float)$shape['radius'], (float)$shape['radius']]
+                                : [(float)$shape['radii'][0], (float)$shape['radii'][1]];
+                            $shapeBounds['x_min'] = min($shapeBounds['x_min'], (float)$center[0] - $radii[0]);
+                            $shapeBounds['x_max'] = max($shapeBounds['x_max'], (float)$center[0] + $radii[0]);
+                            $shapeBounds['y_min'] = min($shapeBounds['y_min'], (float)$center[1] - $radii[1]);
+                            $shapeBounds['y_max'] = max($shapeBounds['y_max'], (float)$center[1] + $radii[1]);
+                        } elseif ($shape['shape'] === 'line' || $shape['shape'] === 'triangle') {
+                            foreach ($shape['points'] as $point) {
+                                $shapeBounds['x_min'] = min($shapeBounds['x_min'], (float)$point[0]);
+                                $shapeBounds['x_max'] = max($shapeBounds['x_max'], (float)$point[0]);
+                                $shapeBounds['y_min'] = min($shapeBounds['y_min'], (float)$point[1]);
+                                $shapeBounds['y_max'] = max($shapeBounds['y_max'], (float)$point[1]);
+                            }
+                        } elseif ($shape['shape'] === 'rectangle') {
+                            $shapeBounds['x_min'] = min($shapeBounds['x_min'], (float)$shape['x_min']);
+                            $shapeBounds['x_max'] = max($shapeBounds['x_max'], (float)$shape['x_max']);
+                            $shapeBounds['y_min'] = min($shapeBounds['y_min'], (float)$shape['y_min']);
+                            $shapeBounds['y_max'] = max($shapeBounds['y_max'], (float)$shape['y_max']);
+                        } elseif ($shape['shape'] === 'parabola') {
+                            $shapeBounds['x_min'] = min($shapeBounds['x_min'], (float)$shape['x_min']);
+                            $shapeBounds['x_max'] = max($shapeBounds['x_max'], (float)$shape['x_max']);
+                            $a = (float)$shape['coefficients'][0];
+                            $b = (float)$shape['coefficients'][1];
+                            $c = (float)$shape['coefficients'][2];
+                            $testX = [(float)$shape['x_min'], (float)$shape['x_max']];
+                            if ($a !== 0.0) {
+                                $vertexX = -$b / (2 * $a);
+                                if ($vertexX > $testX[0] && $vertexX < $testX[1]) {
+                                    $testX[] = $vertexX;
+                                }
+                            }
+                            foreach ($testX as $x) {
+                                $y = $a * $x * $x + $b * $x + $c;
+                                if (!is_finite($y) || abs($y) > 10000) {
+                                    throw new RuntimeException('The presentation contains out-of-range parabola coordinates. Please generate it again.', 503);
+                                }
+                                $shapeBounds['y_min'] = min($shapeBounds['y_min'], $y);
+                                $shapeBounds['y_max'] = max($shapeBounds['y_max'], $y);
+                            }
+                        }
+                    }
+                    if (array_filter($shapeBounds, static fn(float $value): bool => abs($value) > 10000) !== []) {
+                        throw new RuntimeException('The presentation contains out-of-range geometry coordinates. Please generate it again.', 503);
+                    }
+                    foreach (['x_min', 'x_max', 'y_min', 'y_max'] as $key) {
+                        $span = $shapeBounds[$key[0] . '_max'] - $shapeBounds[$key[0] . '_min'];
+                        $padding = $span > 0 ? $span * 0.03 : 0;
+                        $adjusted = str_ends_with($key, '_min')
+                            ? $shapeBounds[$key] - $padding
+                            : $shapeBounds[$key] + $padding;
+                        $visual[$key] = abs($adjusted) <= 10000 ? $adjusted : $shapeBounds[$key];
+                    }
+                    $slide['visual'] = $visual;
                 } elseif ($visual['type'] === 'line_chart') {
                     $series = $visual['series'] ?? null;
                     if (!is_array($series) || $series === [] || count($series) > 5) {
@@ -1162,7 +1281,7 @@ final class AiProviderService
                 }
                 if (isset($question['visual'])) {
                     try {
-                        OnlineAssessmentService::cleanQuestionVisual($question['visual']);
+                        $questions[$index]['visual'] = OnlineAssessmentService::cleanQuestionVisual($question['visual']);
                     } catch (RuntimeException $error) {
                         throw new RuntimeException('The assessment contains an invalid graph, chart or geometry visual.', 503, $error);
                     }
@@ -1500,6 +1619,11 @@ final class AiProviderService
         $label = self::PROVIDERS[$provider]['label'] ?? 'The configured AI provider';
         $providerMessage = preg_replace('/\borg_[a-z0-9_-]+\b/i', '[redacted organization]', $providerMessage) ?? $providerMessage;
         $detail = $providerMessage !== '' ? ' Provider detail: ' . $providerMessage : '';
+        if (preg_match('/tokens?\s+per\s+minute|\bTPM\b/i', $providerMessage)) {
+            return $label . ' returned HTTP 429 because the model token-per-minute limit was reached.'
+                . $detail
+                . ' Presentation generation is split into one-slide requests with a capped response size. Wait for the provider cooldown, or reduce the selected curriculum scope or slide count and try again.';
+        }
         return $label . ' returned HTTP 429.'
             . $detail
             . ' The app waits for provider-supplied cooldowns and retries up to twice within 30 seconds; if this persists, ask the Super Admin to check Platform settings > AI provider for model access, usage limits and billing. '

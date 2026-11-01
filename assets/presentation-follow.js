@@ -113,6 +113,129 @@
     return frame;
   }
 
+  function renderGeometryVisual(visual) {
+    const bounds = ["x_min", "x_max", "y_min", "y_max"].map((key) => Number(visual[key]));
+    const shapes = Array.isArray(visual.shapes) ? visual.shapes.slice(0, 8) : [];
+    if (bounds.some((value) => !Number.isFinite(value)) || bounds[0] >= bounds[1] || bounds[2] >= bounds[3] || !shapes.length) return null;
+    const [xMin, xMax, yMin, yMax] = bounds;
+    const width = 720, height = 380, plot = { left: 58, right: 18, top: 24, bottom: 42 };
+    const rangeX = xMax - xMin, rangeY = yMax - yMin;
+    const scale = Math.min((width - plot.left - plot.right) / rangeX, (height - plot.top - plot.bottom) / rangeY);
+    const plotWidth = rangeX * scale, plotHeight = rangeY * scale;
+    const offsetX = plot.left + ((width - plot.left - plot.right) - plotWidth) / 2;
+    const offsetY = plot.top + ((height - plot.top - plot.bottom) - plotHeight) / 2;
+    const px = (value) => offsetX + (value - xMin) * scale;
+    const py = (value) => offsetY + (yMax - value) * scale;
+    const n = (value) => Number(value.toFixed(2));
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", String(visual.title || "Geometry diagram"));
+    svg.classList.add("presentation-follow-geometry");
+    const add = (tag, attributes, text) => {
+      const element = document.createElementNS(svg.namespaceURI, tag);
+      Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, String(value)));
+      if (text !== undefined) element.textContent = String(text);
+      svg.append(element);
+      return element;
+    };
+    const clipId = "follow-geometry-clip";
+    const defs = document.createElementNS(svg.namespaceURI, "defs");
+    const clip = document.createElementNS(svg.namespaceURI, "clipPath");
+    clip.id = clipId;
+    const clipRect = document.createElementNS(svg.namespaceURI, "rect");
+    Object.entries({ x: n(offsetX), y: n(offsetY), width: n(plotWidth), height: n(plotHeight) }).forEach(([key, value]) => clipRect.setAttribute(key, String(value)));
+    clip.append(clipRect);
+    defs.append(clip);
+    svg.append(defs);
+    for (let index = 0; index <= 4; index++) {
+      const x = offsetX + plotWidth * index / 4, y = offsetY + plotHeight * index / 4;
+      add("line", { x1: n(x), y1: n(offsetY), x2: n(x), y2: n(offsetY + plotHeight), class: "presentation-follow-geometry-grid" });
+      add("line", { x1: n(offsetX), y1: n(y), x2: n(offsetX + plotWidth), y2: n(y), class: "presentation-follow-geometry-grid" });
+      add("text", { x: n(x), y: n(offsetY + plotHeight + 16), "text-anchor": "middle", class: "presentation-follow-geometry-label" }, n(xMin + rangeX * index / 4));
+      add("text", { x: n(offsetX - 8), y: n(y + 4), "text-anchor": "end", class: "presentation-follow-geometry-label" }, n(yMax - rangeY * index / 4));
+    }
+    const axisX = xMin <= 0 && xMax >= 0 ? px(0) : offsetX;
+    const axisY = yMin <= 0 && yMax >= 0 ? py(0) : offsetY + plotHeight;
+    add("line", { x1: n(axisX), y1: n(offsetY), x2: n(axisX), y2: n(offsetY + plotHeight), class: "presentation-follow-geometry-axis" });
+    add("line", { x1: n(offsetX), y1: n(axisY), x2: n(offsetX + plotWidth), y2: n(axisY), class: "presentation-follow-geometry-axis" });
+    const colors = ["#247456", "#d0a64a", "#277da1", "#c85845", "#7256a8", "#4d7c78", "#bf6b40", "#5572a8"];
+    const labels = shapes.map((shape, index) => {
+      if (!shape || typeof shape.label !== "string" || !shape.label.trim()) return null;
+      const item = document.createElement("span");
+      const swatch = document.createElement("i");
+      swatch.style.setProperty("--shape-color", colors[index % colors.length]);
+      item.append(swatch, document.createTextNode(shape.label));
+      return item;
+    }).filter(Boolean);
+    const drawing = document.createElementNS(svg.namespaceURI, "g");
+    drawing.setAttribute("clip-path", `url(#${clipId})`);
+    shapes.forEach((shape, index) => {
+      if (!shape || typeof shape !== "object") return;
+      const color = colors[index % colors.length];
+      const addToDrawing = (tag, attributes, text) => {
+        const element = document.createElementNS(svg.namespaceURI, tag);
+        Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, String(value)));
+        if (text !== undefined) element.textContent = String(text);
+        drawing.append(element);
+        return element;
+      };
+      if (shape.shape === "circle" || shape.shape === "ellipse") {
+        const center = Array.isArray(shape.center) ? shape.center.map(Number) : [];
+        const radii = shape.shape === "circle" ? [Number(shape.radius), Number(shape.radius)] : (Array.isArray(shape.radii) ? shape.radii.map(Number) : []);
+        if (center.length !== 2 || radii.length !== 2 || ![...center, ...radii].every(Number.isFinite) || radii.some((value) => value <= 0)) return;
+        addToDrawing("ellipse", {
+          cx: n(px(center[0])), cy: n(py(center[1])), rx: n(radii[0] * scale), ry: n(radii[1] * scale),
+          fill: color, "fill-opacity": ".12", stroke: color, "stroke-width": "2.5"
+        });
+      } else if (shape.shape === "parabola") {
+        const coefficients = Array.isArray(shape.coefficients) ? shape.coefficients.map(Number) : [];
+        const from = Number(shape.x_min), to = Number(shape.x_max);
+        if (coefficients.length !== 3 || !coefficients.every(Number.isFinite) || !Number.isFinite(from) || !Number.isFinite(to) || from >= to) return;
+        const [a, b, c] = coefficients, segments = 12;
+        let d = `M ${n(px(from))} ${n(py(a * from * from + b * from + c))}`;
+        for (let step = 0; step < segments; step++) {
+          const x0 = from + (to - from) * step / segments, x1 = from + (to - from) * (step + 1) / segments;
+          const y0 = a * x0 * x0 + b * x0 + c, y1 = a * x1 * x1 + b * x1 + c;
+          const dx = (x1 - x0) * scale / 3;
+          const control1 = { x: px(x0) + dx, y: py(y0) - (2 * a * x0 + b) * (x1 - x0) * scale / 3 };
+          const control2 = { x: px(x1) - dx, y: py(y1) + (2 * a * x1 + b) * (x1 - x0) * scale / 3 };
+          d += ` C ${n(control1.x)} ${n(control1.y)} ${n(control2.x)} ${n(control2.y)} ${n(px(x1))} ${n(py(y1))}`;
+        }
+        addToDrawing("path", { d, fill: "none", stroke: color, "stroke-width": "3", "stroke-linecap": "round" });
+      } else if (shape.shape === "rectangle") {
+        const left = Number(shape.x_min), right = Number(shape.x_max), top = Number(shape.y_max), bottom = Number(shape.y_min);
+        if (![left, right, top, bottom].every(Number.isFinite) || left >= right || bottom >= top) return;
+        addToDrawing("rect", {
+          x: n(px(left)), y: n(py(top)), width: n((right - left) * scale), height: n((top - bottom) * scale),
+          fill: color, "fill-opacity": ".12", stroke: color, "stroke-width": "2.5"
+        });
+      } else if (shape.shape === "line" || shape.shape === "triangle") {
+        const points = Array.isArray(shape.points) ? shape.points.filter((point) => Array.isArray(point) && point.length === 2 && point.every((value) => Number.isFinite(Number(value)))) : [];
+        const needed = shape.shape === "line" ? 2 : 3;
+        if (points.length !== needed) return;
+        const pointString = points.map(([x, y]) => `${n(px(Number(x)))},${n(py(Number(y)))}`).join(" ");
+        addToDrawing(shape.shape === "line" ? "polyline" : "polygon", {
+          points: pointString, fill: shape.shape === "line" ? "none" : color,
+          "fill-opacity": shape.shape === "line" ? "0" : ".12", stroke: color, "stroke-width": "2.5"
+        });
+      }
+    });
+    svg.append(drawing);
+    if (visual.x_label) add("text", { x: n(offsetX + plotWidth / 2), y: height - 3, "text-anchor": "middle", class: "presentation-follow-geometry-label" }, visual.x_label);
+    if (visual.y_label) add("text", { x: 12, y: n(offsetY + plotHeight / 2), "text-anchor": "middle", class: "presentation-follow-geometry-label", transform: `rotate(-90 12 ${n(offsetY + plotHeight / 2)})` }, visual.y_label);
+    const frame = visualFrame(visual, "geometry");
+    frame.setAttribute("role", "group");
+    frame.append(svg);
+    if (labels.length) {
+      const legend = document.createElement("div");
+      legend.className = "presentation-follow-geometry-legend";
+      legend.append(...labels);
+      frame.append(legend);
+    }
+    return frame;
+  }
+
   function renderLineChart(visual, type) {
     const series = type === "graph"
       ? [{
@@ -239,6 +362,7 @@
     const type = String(visual.type || "").toLowerCase();
     if (type === "table") return renderTableVisual(visual);
     if (type === "bar_chart" || type === "chart") return renderBarChart(visual);
+    if (type === "geometry") return renderGeometryVisual(visual);
     if (type === "graph" || type === "line_chart") return renderLineChart(visual, type);
     if (["process", "timeline", "cards", "comparison"].includes(type)) return renderCardVisual(visual);
     if (visual.description) return renderCardVisual(visual);

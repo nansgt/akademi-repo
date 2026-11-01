@@ -30,9 +30,9 @@ final class WorkspaceService
         $profile = $this->profilePayload((int)$user['id'], (string)$user['display_name'], $storedProfile, $subjects);
 
         $documentsStatement = $pdo->prepare(
-            'SELECT id, document_type, title, subject_name, year_group, class_name,
+            'SELECT id, document_type, title, subject_name, year_group, class_name, status,
                     source_input, generated_content, created_at
-             FROM saved_documents WHERE user_id = :user_id AND status <> \'archived\'
+             FROM saved_documents WHERE user_id = :user_id
              ORDER BY updated_at DESC, id DESC LIMIT 500'
         );
         $documentsStatement->execute(['user_id' => $userId]);
@@ -318,6 +318,26 @@ final class WorkspaceService
         }
     }
 
+    public function setDocumentArchived(int $userId, int $documentId, bool $archived): array
+    {
+        $status = $archived ? 'archived' : 'draft';
+        $statement = Connection::get()->prepare(
+            'UPDATE saved_documents SET status = :status, updated_at = UTC_TIMESTAMP()
+             WHERE id = :id AND user_id = :user_id'
+        );
+        $statement->execute(['status' => $status, 'id' => $documentId, 'user_id' => $userId]);
+        if ($statement->rowCount() === 0) {
+            $exists = Connection::get()->prepare(
+                'SELECT 1 FROM saved_documents WHERE id = :id AND user_id = :user_id'
+            );
+            $exists->execute(['id' => $documentId, 'user_id' => $userId]);
+            if (!$exists->fetchColumn()) {
+                throw new RuntimeException('Document was not found in your workspace.', 404);
+            }
+        }
+        return ['id' => (string)$documentId, 'status' => $status];
+    }
+
     public function createScheduleEntry(int $userId, array $input): array
     {
         $entry = $this->cleanScheduleEntry($input);
@@ -454,7 +474,7 @@ final class WorkspaceService
     private function getDocument(int $userId, int $documentId): array
     {
         $statement = Connection::get()->prepare(
-            'SELECT id, document_type, title, subject_name, year_group, class_name,
+            'SELECT id, document_type, title, subject_name, year_group, class_name, status,
                     source_input, generated_content, created_at
              FROM saved_documents WHERE id = :id AND user_id = :user_id LIMIT 1'
         );
@@ -477,6 +497,7 @@ final class WorkspaceService
             'subject' => (string)($row['subject_name'] ?? ''),
             'year' => (string)($row['year_group'] ?? ''),
             'className' => (string)($row['class_name'] ?? ''),
+            'status' => (string)($row['status'] ?? 'draft'),
             'createdAt' => gmdate('c', strtotime((string)$row['created_at'] . ' UTC')),
             'data' => $data,
             'html' => (string)($generated['html'] ?? ''),
