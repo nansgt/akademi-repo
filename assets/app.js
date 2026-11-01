@@ -3033,7 +3033,9 @@
         || (visual.type === "line_chart" && Array.isArray(visual.series)
           && visual.series.some((series) => Array.isArray(series?.values) && series.values.length > 1))
       );
-      if (hasVisualContent) return slide;
+      const hasSupportedImage = slide.image && typeof slide.image === "object"
+        && (isEmbeddedSlideImage(slide.image.url) || isCommonsSlideImage(slide.image));
+      if (hasVisualContent || hasSupportedImage) return slide;
       const items = (Array.isArray(slide.key_points) ? slide.key_points : [])
         .filter((point) => typeof point === "string" && point.trim())
         .slice(0, 4);
@@ -6114,6 +6116,7 @@
   const slidesWeekList = document.getElementById("slides-week-list");
   const slidesCurriculumStatus = document.getElementById("slides-curriculum-status");
   const slidesEditEditor = document.getElementById("slides-edit-editor");
+  const slidesDialogEditTabs = document.querySelector("[data-slides-dialog-edit-tabs]");
   let slidesWeeklyLessons = [];
   let slidesGeneratedFields = { outcomes: [], indicators: [], points: [] };
   let slidesLoadVersion = 0;
@@ -6138,15 +6141,34 @@
       const original = Number.isInteger(sourceIndex)
         ? (activeSlideEditDoc?.data?.slides || [])[sourceIndex]
         : null;
-      let visual;
-      try {
-        visual = JSON.parse(read("visual"));
-      } catch {
-        throw new Error(`Slide ${index + 1} visual must be valid JSON.`);
+      const visualFormat = read("visual-format");
+      let visual = null;
+      if (visualFormat !== "image") {
+        try {
+          visual = JSON.parse(read("visual"));
+        } catch {
+          throw new Error(`Slide ${index + 1} visual must be valid JSON.`);
+        }
+        if (!visual || typeof visual !== "object" || Array.isArray(visual)
+          || !["process", "timeline", "cards", "comparison", "table", "bar_chart", "chart", "graph", "line_chart", "geometry"].includes(visual.type)) {
+          throw new Error(`Slide ${index + 1} visual must use a supported visual type.`);
+        }
       }
-      if (!visual || typeof visual !== "object" || Array.isArray(visual)
-        || !["process", "timeline", "cards", "comparison", "table", "bar_chart", "graph", "line_chart", "geometry"].includes(visual.type)) {
-        throw new Error(`Slide ${index + 1} visual must use a supported visual type.`);
+      let image = null;
+      const imageText = read("image");
+      if (imageText) {
+        try {
+          image = JSON.parse(imageText);
+        } catch {
+          throw new Error(`Slide ${index + 1} image data is invalid.`);
+        }
+        if (!image || typeof image !== "object" || typeof image.url !== "string"
+          || (!isEmbeddedSlideImage(image.url) && !isCommonsSlideImage(image))) {
+          throw new Error(`Slide ${index + 1} image data is invalid.`);
+        }
+      }
+      if (visualFormat === "image" && !image) {
+        throw new Error(`Upload an image for slide ${index + 1}, or choose another visual type.`);
       }
       return {
         ...(original || {}),
@@ -6154,7 +6176,8 @@
         key_points: lines(read("key_points")),
         activity: read("activity").trim(),
         presenter_notes: read("presenter_notes").trim(),
-        visual,
+        visual: visualFormat === "image" ? null : visual,
+        image,
         visual_suggestion: ""
       };
     });
@@ -6197,19 +6220,27 @@
     const year = yearMatch ? `SHS Year ${yearMatch[1]}` : "";
     slidesEditEditor.innerHTML = `
       <div class="slides-edit-heading">
-        <div><span class="eyebrow">EDIT GENERATED CONTENT</span><h3>Presentation slides</h3><p>Edit slide text, speaker notes and visual data directly. Changes appear in the preview as you type.</p></div>
-        <button type="button" class="button button-secondary" data-slide-add>+ Add slide</button>
+        <div><span class="eyebrow">EDIT GENERATED CONTENT</span><h3>Presentation slides</h3><p>Replace any slide visual with a prompt-generated chart or diagram, or upload your own image. Preview changes before saving.</p></div>
       </div>
-      <div class="form-grid slides-edit-metadata">
-        <label class="field field-wide"><span>Presentation title <b>*</b></span><input name="editTitle" required value="${escapeHtml(data.title || doc.title.replace(/\s*·\s*presentation outline$/i, ""))}"></label>
-        <label class="field"><span>SHS year</span><select name="editYear">${options([["", "Not set"], ["SHS Year 1", "SHS Year 1"], ["SHS Year 2", "SHS Year 2"], ["SHS Year 3", "SHS Year 3"]], year)}</select></label>
-        <label class="field"><span>Subject</span><input name="editSubject" value="${escapeHtml(data.subject || "")}"></label>
-        <label class="field"><span>Presentation template</span><select name="editTemplate">${options(templates, data.template || "lesson")}</select></label>
-        <label class="field"><span>Slide design</span><select name="editVisualTheme">${options(themes, data.visual_theme || "modern")}</select></label>
-      </div>
-      <p class="field-help slides-edit-count" data-slide-count></p>
-      <div class="slides-edit-list" data-slide-list></div>
-      <section class="slides-edit-preview"><h4>Live preview</h4><div class="presentation-preview-grid" data-slide-preview></div></section>`;
+      <section class="slides-edit-tab-panel" id="slides-edit-panel-content" role="tabpanel" aria-labelledby="slides-edit-tab-content" data-slide-edit-panel="content">
+        <div class="slides-edit-list-heading"><span class="field-help slides-edit-count" data-slide-count></span><button type="button" class="button button-secondary" data-slide-add>+ Add slide</button></div>
+        <div class="form-grid slides-edit-metadata">
+          <label class="field field-wide"><span>Presentation title <b>*</b></span><input name="editTitle" required value="${escapeHtml(data.title || doc.title.replace(/\s*·\s*presentation outline$/i, ""))}"></label>
+          <label class="field"><span>SHS year</span><select name="editYear">${options([["", "Not set"], ["SHS Year 1", "SHS Year 1"], ["SHS Year 2", "SHS Year 2"], ["SHS Year 3", "SHS Year 3"]], year)}</select></label>
+          <label class="field"><span>Subject</span><input name="editSubject" value="${escapeHtml(data.subject || "")}"></label>
+          <label class="field"><span>Presentation template</span><select name="editTemplate">${options(templates, data.template || "lesson")}</select></label>
+          <label class="field"><span>Slide design</span><select name="editVisualTheme">${options(themes, data.visual_theme || "modern")}</select></label>
+        </div>
+        <div class="slides-edit-list" data-slide-list></div>
+      </section>
+      <section class="slides-edit-preview slides-edit-tab-panel" id="slides-edit-panel-preview" role="tabpanel" aria-labelledby="slides-edit-tab-preview" data-slide-edit-panel="preview" hidden>
+        <h4>Live preview</h4><div class="presentation-preview-grid" data-slide-preview></div>
+      </section>`;
+    slidesDialogEditTabs.querySelectorAll("[data-slide-edit-tab]").forEach((tab, index) => {
+      const selected = index === 0;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
     updateSlideEditList(slides.map((slide, index) => ({ ...slide, _sourceIndex: index })));
   }
 
@@ -6217,6 +6248,11 @@
     const visual = slide._visualText || (slide.visual && typeof slide.visual === "object"
       ? JSON.stringify(slide.visual, null, 2)
       : JSON.stringify({ type: "cards", title: "Key ideas", items: slide.key_points || [] }, null, 2));
+    const visualTypes = ["bar_chart", "chart"].includes(slide.visual?.type) ? "chart"
+      : ["process", "timeline", "cards"].includes(slide.visual?.type) ? "diagram"
+        : slide.visual?.type || "auto";
+    const selectedFormat = slide.image && !slide.visual ? "image" : visualTypes;
+    const imageJson = slide.image && typeof slide.image === "object" ? JSON.stringify(slide.image) : "";
     return `<fieldset class="slides-edit-card" data-slide-edit-index="${index}" data-slide-source-index="${slide._sourceIndex ?? ""}">
       <legend>Slide ${index + 1}</legend>
       <div class="slides-edit-card-heading"><strong>Slide ${index + 1}</strong><button type="button" class="text-button" data-slide-remove="${index}">Remove slide</button></div>
@@ -6224,13 +6260,82 @@
       <label class="field"><span>Key points · one per line <b>*</b></span><textarea data-slide-field="key_points" rows="4" required>${escapeHtml(Array.isArray(slide.key_points) ? slide.key_points.join("\n") : "")}</textarea></label>
       <label class="field"><span>Classroom activity</span><textarea data-slide-field="activity" rows="2">${escapeHtml(slide.activity || "")}</textarea></label>
       <label class="field"><span>Teacher-only presenter notes</span><textarea data-slide-field="presenter_notes" rows="3">${escapeHtml(slide.presenter_notes || slide.speaker_notes || slide.notes || "")}</textarea></label>
-      <label class="field"><span>Visual (JSON)</span><textarea data-slide-field="visual" rows="10" spellcheck="false" required>${escapeHtml(visual)}</textarea><small class="field-help">Edit this slide’s chart, graph, diagram or shapes as JSON. Keep the visual type and data structure valid.</small></label>
+      <section class="slide-visual-tools" aria-label="Replace slide visual">
+        <label class="field"><span>Visual style</span><select data-slide-field="visual-format">
+          <option value="auto"${selectedFormat === "auto" ? " selected" : ""}>AI chooses a relevant visual</option>
+          <option value="chart"${selectedFormat === "chart" ? " selected" : ""}>Chart</option>
+          <option value="graph"${selectedFormat === "graph" ? " selected" : ""}>Coordinate graph</option>
+          <option value="diagram"${selectedFormat === "diagram" ? " selected" : ""}>Process or concept diagram</option>
+          <option value="comparison"${selectedFormat === "comparison" ? " selected" : ""}>Comparison</option>
+          <option value="table"${selectedFormat === "table" ? " selected" : ""}>Table</option>
+          <option value="cards"${selectedFormat === "cards" ? " selected" : ""}>Key idea cards</option>
+          <option value="image"${selectedFormat === "image" ? " selected" : ""}>Uploaded image only</option>
+        </select></label>
+        <label class="field"><span>Tell AI what to show</span><textarea data-slide-field="visual-prompt" rows="2" maxlength="500" placeholder="e.g. Show the stages as a clear left-to-right process">${escapeHtml(slide._visualPrompt || "")}</textarea></label>
+        <div class="slide-visual-actions">
+          <button type="button" class="button button-secondary" data-slide-ai-visual="${index}"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Generate visual</button>
+          <button type="button" class="button button-secondary" data-slide-image-browse><i class="fa-solid fa-image" aria-hidden="true"></i> Upload image</button>
+          <input type="file" data-slide-image-upload accept="image/jpeg,image/png,image/webp" hidden aria-label="Choose a slide image">
+          <button type="button" class="text-button" data-slide-image-remove="${index}"${slide.image ? "" : " hidden"}>Remove image</button>
+        </div>
+        <div class="slide-visual-preview-actions">
+          <button type="button" class="text-button" data-slide-preview-toggle aria-expanded="false"><i class="fa-solid fa-eye" aria-hidden="true"></i> <span>Preview visual</span></button>
+        </div>
+        <section class="slide-inline-preview" data-slide-inline-preview hidden aria-label="Slide visual preview">
+          <div class="slide-inline-preview-content" data-slide-inline-preview-content></div>
+        </section>
+        <small class="field-help" data-slide-visual-status aria-live="polite">AI creates editable charts and diagrams. Images you upload are compressed and embedded in this presentation.</small>
+        <textarea data-slide-field="image" hidden>${escapeHtml(imageJson)}</textarea>
+        <details class="slide-visual-advanced"><summary>Fine-tune visual data</summary><label class="field"><span>Visual data (JSON)</span><textarea data-slide-field="visual" rows="8" spellcheck="false" required>${escapeHtml(visual)}</textarea><small class="field-help">Advanced: edit this slide’s structured chart, graph, diagram or shape data.</small></label></details>
+      </section>
     </fieldset>`;
+  }
+
+  function setSlideInlinePreview(card, visible) {
+    const preview = card.querySelector("[data-slide-inline-preview]");
+    const button = card.querySelector("[data-slide-preview-toggle]");
+    if (!preview || !button) return;
+    preview.hidden = !visible;
+    button.setAttribute("aria-expanded", String(visible));
+    button.querySelector("span").textContent = `${visible ? "Hide visual preview" : "Preview visual"}`;
+    button.querySelector("i").className = `fa-solid fa-${visible ? "eye-slash" : "eye"}`;
+  }
+
+  function refreshSlideInlinePreviews(cards = [...slidesEditEditor.querySelectorAll("[data-slide-edit-index]")]) {
+    const data = {
+      subject: slidesEditEditor.querySelector('[name="editSubject"]')?.value || "",
+      year: slidesEditEditor.querySelector('[name="editYear"]')?.value || "",
+      template: slidesEditEditor.querySelector('[name="editTemplate"]')?.value || "lesson",
+      visual_theme: slidesEditEditor.querySelector('[name="editVisualTheme"]')?.value || "modern"
+    };
+    cards.forEach((card, index) => {
+      const preview = card.querySelector("[data-slide-inline-preview-content]");
+      if (!preview) return;
+      const read = (field) => card.querySelector(`[data-slide-field="${field}"]`)?.value || "";
+      let visual = null;
+      let image = null;
+      try {
+        visual = JSON.parse(read("visual"));
+        image = JSON.parse(read("image") || "null");
+      } catch {
+        preview.innerHTML = '<p class="slide-inline-preview-error">Visual data is not valid JSON yet.</p>';
+        return;
+      }
+      const slide = {
+        title: read("title").trim() || `Slide ${index + 1}`,
+        key_points: lines(read("key_points")),
+        activity: read("activity").trim(),
+        image,
+        visual: read("visual-format") === "image" ? null : visual
+      };
+      preview.innerHTML = presentationSlideMarkup(slide, index, data, !card.querySelector("[data-slide-inline-preview]")?.hidden);
+    });
   }
 
   function refreshSlideEditPreview() {
     const cards = [...slidesEditEditor.querySelectorAll("[data-slide-edit-index]")];
     slidesEditEditor.querySelector("[data-slide-count]").textContent = `${cards.length} slide${cards.length === 1 ? "" : "s"} · maximum 20`;
+    refreshSlideInlinePreviews(cards);
     const preview = slidesEditEditor.querySelector("[data-slide-preview]");
     if (!preview) return;
     try {
@@ -6250,14 +6355,17 @@
       } catch {
         visual = undefined;
       }
+      const visualFormat = read("visual-format");
       return {
         _sourceIndex: card.dataset.slideSourceIndex === "" ? null : Number(card.dataset.slideSourceIndex),
         title: read("title"),
         key_points: lines(read("key_points")),
         activity: read("activity"),
         presenter_notes: read("presenter_notes"),
-        visual,
-        _visualText: visual ? undefined : read("visual")
+        _visualPrompt: read("visual-prompt"),
+        image: (() => { try { return JSON.parse(read("image") || "null"); } catch { return null; } })(),
+        visual: visualFormat === "image" ? null : visual,
+        _visualText: visualFormat === "image" || visual ? undefined : read("visual")
       };
     });
   }
@@ -6265,6 +6373,13 @@
   function updateSlideEditList(slides) {
     slidesEditEditor.querySelector("[data-slide-list]").innerHTML = slides
       .map((slide, index) => slideEditCardMarkup(slide, index)).join("");
+    slidesEditEditor.querySelectorAll("[data-slide-edit-index]").forEach((card) => {
+      const imageOnly = card.querySelector('[data-slide-field="visual-format"]').value === "image";
+      const visualInput = card.querySelector('[data-slide-field="visual"]');
+      visualInput.disabled = imageOnly;
+      visualInput.required = !imageOnly;
+      card.querySelector(".slide-visual-advanced").hidden = imageOnly;
+    });
     slidesEditEditor.querySelectorAll("[data-slide-remove]").forEach((button) => {
       button.disabled = slides.length <= 1;
     });
@@ -6276,6 +6391,7 @@
     const formGrid = slidesForm.querySelector(":scope > .form-grid");
     slidesForm.classList.toggle("is-editing-slides", editing);
     slidesEditEditor.hidden = !editing;
+    slidesDialogEditTabs.hidden = !editing;
     formGrid.hidden = editing;
     formGrid.querySelectorAll("input, select, textarea, button").forEach((control) => {
       control.disabled = editing;
@@ -6577,17 +6693,25 @@
     };
   }
 
-  function presentationSlideMarkup(slide, index, data) {
-    const imageMarkup = presentationImageMarkup(slide.image);
+  function presentationSlideMarkup(slide, index, data, loadImageImmediately = false) {
+    const imageMarkup = presentationImageMarkup(slide.image, loadImageImmediately);
     const visualMarkup = presentationVisualMarkup(slide.visual);
     const mediaMarkup = imageMarkup
       ? `<div class="presentation-media-column">${imageMarkup}${visualMarkup}</div>`
       : visualMarkup;
-    return `<article class="presentation-slide-preview presentation-theme-${escapeHtml(data.visual_theme)} presentation-template-${escapeHtml(data.template)}"><header><span>SLIDE ${String(index + 1).padStart(2, "0")}</span><small>${escapeHtml(data.subject || "")} · ${escapeHtml(data.year || data.year_group || "")}</small></header><h4>${escapeHtml(slide.title)}</h4><ul>${(slide.key_points || []).map((point) => `<li>${escapeHtml(point)}</li>`).join("")}</ul>${mediaMarkup}<p>${escapeHtml(slide.activity || "")}${slide.visual_suggestion ? `<br><b>Visual:</b> ${escapeHtml(slide.visual_suggestion)}` : ""}</p></article>`;
+    const activityMarkup = slide.activity
+      ? `<section class="presentation-slide-activity"><strong><i class="fa-solid fa-people-group" aria-hidden="true"></i> Classroom activity</strong><p>${escapeHtml(slide.activity)}</p></section>`
+      : "";
+    const suggestionMarkup = slide.visual_suggestion ? `<p class="presentation-slide-visual-suggestion"><b>Visual:</b> ${escapeHtml(slide.visual_suggestion)}</p>` : "";
+    return `<article class="presentation-slide-preview presentation-theme-${escapeHtml(data.visual_theme)} presentation-template-${escapeHtml(data.template)}"><header><span>SLIDE ${String(index + 1).padStart(2, "0")}</span><small>${escapeHtml(data.subject || "")} · ${escapeHtml(data.year || data.year_group || "")}</small></header><h4>${escapeHtml(slide.title)}</h4><ul>${(slide.key_points || []).map((point) => `<li>${escapeHtml(point)}</li>`).join("")}</ul>${mediaMarkup}${activityMarkup}${suggestionMarkup}</article>`;
   }
 
-  function presentationImageMarkup(image) {
+  function presentationImageMarkup(image, loadImmediately = false) {
     if (!image || typeof image !== "object") return "";
+    if (isEmbeddedSlideImage(image.url)) {
+      return `<figure class="presentation-slide-image"><img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt || "Teacher-uploaded slide image")}" loading="${loadImmediately ? "eager" : "lazy"}"><figcaption>${escapeHtml(image.license || "Teacher-provided image")}</figcaption></figure>`;
+    }
+    if (!isCommonsSlideImage(image)) return "";
     let imageUrl;
     let sourceUrl;
     try {
@@ -6606,6 +6730,24 @@
       }
     } catch { /* Some public-domain images do not have a separate license URL. */ }
     return `<figure class="presentation-slide-image"><img src="${escapeHtml(imageUrl.href)}" alt="${escapeHtml(image.alt || "Curriculum-related classroom image")}" loading="lazy" referrerpolicy="no-referrer"><figcaption><a href="${escapeHtml(sourceUrl.href)}" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>${image.attribution ? ` · ${escapeHtml(image.attribution)}` : ""}${licenseMarkup}</figcaption></figure>`;
+  }
+
+  function isEmbeddedSlideImage(value) {
+    return typeof value === "string" && value.length <= 100000
+      && /^data:image\/(?:jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
+  }
+
+  function isCommonsSlideImage(image) {
+    if (!image || typeof image !== "object") return false;
+    try {
+      const imageUrl = new URL(String(image.url || ""));
+      const sourceUrl = new URL(String(image.source_url || ""));
+      return imageUrl.protocol === "https:"
+        && ["upload.wikimedia.org", "thumb.wikimedia.org"].includes(imageUrl.hostname)
+        && sourceUrl.protocol === "https:" && sourceUrl.hostname === "commons.wikimedia.org";
+    } catch {
+      return false;
+    }
   }
 
   async function enrichPresentationImages(slides, subject) {
@@ -6784,11 +6926,11 @@
         </section>
         <span class="presentation-reaction-notice" data-presentation-reaction-notice role="status" aria-live="polite"></span>
         <section class="presentation-feedback-card presentation-poll-live-feedback" data-presentation-poll-live-feedback aria-label="Live poll results" aria-live="polite" hidden>
-          <h3><i class="fa-solid fa-square-poll-vertical"></i> Live poll <span class="presentation-live-count" data-presentation-feedback-count="poll" hidden></span></h3>
+          <h3><i class="fa-solid fa-square-poll-vertical"></i> Live poll <span class="presentation-live-count" data-presentation-feedback-count="poll" hidden></span><button type="button" class="presentation-feedback-close" data-presentation-poll-hide aria-label="Close poll pane" title="Close poll pane"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></h3>
           <div class="presentation-poll-feedback-content" data-presentation-poll-feedback></div>
         </section>
-        <section class="presentation-feedback-card presentation-question-live-feedback" data-presentation-question-live-feedback aria-label="Student questions" hidden>
-          <h3><i class="fa-solid fa-circle-question"></i> Student questions <span class="presentation-live-count" data-presentation-feedback-count="questions" hidden></span></h3>
+        <section class="presentation-feedback-card presentation-question-live-feedback" data-presentation-question-live-feedback aria-label="Class chat" hidden>
+          <h3><i class="fa-solid fa-comments"></i> Class chat <span class="presentation-live-count" data-presentation-feedback-count="questions" hidden></span><button type="button" class="presentation-feedback-close" data-presentation-chat-hide aria-label="Close chat pane" title="Close chat pane"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></h3>
           <div class="presentation-question-feedback-content" data-presentation-question-feedback></div>
         </section>
       </div>
@@ -6837,6 +6979,8 @@
     const questionLiveFeedback = dialog.querySelector("[data-presentation-question-live-feedback]");
     const questionFeedback = dialog.querySelector("[data-presentation-question-feedback]");
     const pollOptionsContainer = dialog.querySelector("[data-presentation-poll-options]");
+    const pollHideButton = dialog.querySelector("[data-presentation-poll-hide]");
+    const chatHideButton = dialog.querySelector("[data-presentation-chat-hide]");
     const feedback = dialog.querySelector("[data-presentation-feedback]");
     const historyButton = dialog.querySelector("[data-presentation-open-history]");
     historyButton.addEventListener("click", () => {
@@ -6852,6 +6996,14 @@
     participantsClose.addEventListener("click", () => participantsDialog.close());
     const participantJoinNotice = dialog.querySelector("[data-presentation-join-notice]");
     const reactionNotice = dialog.querySelector("[data-presentation-reaction-notice]");
+    pollHideButton.addEventListener("click", () => {
+      if (feedbackPanels.poll) feedbackVisibilityButtons.poll?.click();
+      else pollLiveFeedback.hidden = true;
+    });
+    chatHideButton.addEventListener("click", () => {
+      if (feedbackPanels.questions) feedbackVisibilityButtons.questions?.click();
+      else questionLiveFeedback.hidden = true;
+    });
     let activeSlide = 0;
     let liveSession = resumedSession ? { id: resumedSession.id, url: resumedSession.url } : null;
     let stopLiveSession = async () => true;
@@ -7166,11 +7318,11 @@
       if (!questions.length) {
         const empty = document.createElement("p");
         empty.className = "presentation-question-empty";
-        empty.textContent = "Student questions will appear here.";
+        empty.textContent = "Student messages will appear here.";
         questionFeedback.append(empty);
         return;
       }
-      renderQuestionChat(questionFeedback, questions.slice(-30), liveSession?.id, (error) => {
+      renderTeacherChat(questionFeedback, questions.slice(-30), liveSession?.id, (error) => {
         setFeedback(error instanceof Error ? error.message : "The response could not be saved.", true);
       }, (updatedQuestions) => {
         lastQuestionSummary = JSON.stringify(updatedQuestions);
@@ -7838,15 +7990,6 @@
         participantsButton.title = "View joined students";
         participantsButton.innerHTML = `<i class="fa-solid fa-users" aria-hidden="true"></i><small>Students</small><span class="presentation-live-count" data-presentation-participant-button-count>${joinedStudentCount > 99 ? "99+" : joinedStudentCount}</span>`;
         participantsButton.addEventListener("click", () => participantsDialog.showModal());
-        const openLink = document.createElement("a");
-        openLink.className = "presentation-icon-button";
-        openLink.href = result.url;
-        openLink.target = "_blank";
-        openLink.rel = "noopener noreferrer";
-        openLink.setAttribute("aria-label", "Open student presentation link in a new tab");
-        openLink.title = "Open student presentation link";
-        openLink.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i><small>Open</small>';
-        openLink.hidden = !result.url;
         const linkToggle = document.createElement("button");
         linkToggle.type = "button";
         linkToggle.className = "presentation-icon-button";
@@ -7901,7 +8044,7 @@
         const liveStatus = document.createElement("span");
         liveStatus.className = "presentation-live-status";
         liveStatus.setAttribute("aria-live", "polite");
-        liveControls.replaceChildren(linkLabel, linkInput, openLink, participantsButton, linkToggle, copyButton, endButton, copyFeedback, liveStatus);
+        liveControls.replaceChildren(linkLabel, linkInput, participantsButton, linkToggle, copyButton, endButton, copyFeedback, liveStatus);
         const visibilityButton = (key, label, icon, panel) => {
           const button = document.createElement("button");
           button.type = "button";
@@ -7929,7 +8072,7 @@
         };
         visibilityButton("pace", "Pace", "gauge-high", paceSummary);
         visibilityButton("poll", "Poll", "square-poll-vertical", pollLiveFeedback);
-        visibilityButton("questions", "Q&A", "circle-question", questionLiveFeedback);
+        visibilityButton("questions", "Chat", "comments", questionLiveFeedback);
         const endLiveSession = async () => {
           if (!liveSession) return true;
           if (stoppingLiveSession) return stoppingLiveSession;
@@ -8079,7 +8222,7 @@
       `<div class="document-section"><h3>Curriculum scope</h3>${weekLabels.length ? `<ul>${weekLabels.map((week) => `<li>${escapeHtml(week)}</li>`).join("")}</ul>` : "<p>No verified weekly scope selected. Add and verify your own curriculum references.</p>"}</div>`,
       `<div class="document-section"><h3>Learning outcomes</h3><ul>${(data.learning_outcomes || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`,
       `<div class="document-section"><h3>Learning indicators</h3><ul>${(data.learning_indicators || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><p>Source-recorded targets are included where available; any additional suggestions are teacher drafts and are not represented as official curriculum wording.</p></div>`,
-      `<div class="document-section"><h3>Presentation preview · ${escapeHtml(templateLabels[data.template] || templateLabels.lesson)}</h3><p>PowerPoint design: ${escapeHtml(visualThemeLabels[data.visual_theme] || visualThemeLabels.modern)}. Every slide includes a visual: charts, tables, graphs and concept diagrams are previewed below and exported as editable PowerPoint elements.</p><div class="presentation-preview-grid">${outline}</div></div>`,
+      `<div class="document-section"><h3>Presentation preview · ${escapeHtml(templateLabels[data.template] || templateLabels.lesson)}</h3><p>PowerPoint design: ${escapeHtml(visualThemeLabels[data.visual_theme] || visualThemeLabels.modern)}. Slides can combine editable charts and diagrams with uploaded images. Review the visual on each slide before presenting.</p><div class="presentation-preview-grid">${outline}</div></div>`,
       ...(speakerNotes.length ? [`<div class="document-section"><h3>Teacher lecture notes · private</h3><ol>${speakerNotes.map(({ index, notes }) => `<li><strong>Slide ${index + 1}:</strong> ${escapeHtml(notes)}</li>`).join("")}</ol><p>These notes are for the teacher and are not shared on student presentation screens.</p></div>`] : [])
     ];
     return documentFrame(
@@ -8106,6 +8249,129 @@
     slidesForm.querySelector('[type="submit"]').textContent = "Save presentation";
     slidesCurriculumStatus.textContent = "";
     planningDialogs.slides.showModal();
+  }
+
+  function renderTeacherChat(container, questions, simulationId, onError = () => {}, onSaved = () => {}) {
+    const previousComposer = container.querySelector(".presentation-teacher-chat-composer");
+    const previousTranscript = container.querySelector(".presentation-teacher-chat-transcript");
+    const previousScrollTop = previousTranscript?.scrollTop || 0;
+    const lastMessageWasVisible = !previousTranscript
+      || previousTranscript.scrollHeight - previousTranscript.scrollTop - previousTranscript.clientHeight < 48;
+    const existingId = Number(container.dataset.replyQuestionId);
+    const selectedQuestion = questions.find((question) => Number(question.id) === existingId)
+      || questions[questions.length - 1]
+      || null;
+    if (selectedQuestion) container.dataset.replyQuestionId = String(selectedQuestion.id);
+    const draft = previousComposer?.dataset.questionId === String(selectedQuestion?.id)
+      ? previousComposer.querySelector("textarea")?.value || ""
+      : "";
+    container.replaceChildren();
+
+    const transcript = document.createElement("div");
+    transcript.className = "presentation-teacher-chat-transcript";
+    if (!questions.length) {
+      const empty = document.createElement("p");
+      empty.className = "presentation-question-empty";
+      empty.textContent = "Student messages will appear here.";
+      transcript.append(empty);
+    }
+
+    questions.forEach((question) => {
+      const thread = document.createElement("article");
+      thread.className = "presentation-chat-thread";
+      thread.dataset.questionId = String(question.id);
+      if (Number(selectedQuestion?.id) === Number(question.id)) thread.classList.add("is-selected");
+
+      const studentMeta = document.createElement("div");
+      studentMeta.className = "presentation-chat-meta presentation-chat-meta-student";
+      studentMeta.textContent = String(question.participant_name || "Student");
+      const studentMessage = document.createElement("p");
+      studentMessage.className = "presentation-chat-bubble presentation-chat-bubble-student";
+      studentMessage.textContent = String(question.question || "");
+      thread.append(studentMeta, studentMessage);
+
+      const replies = Array.isArray(question.teacher_replies) && question.teacher_replies.length
+        ? question.teacher_replies
+        : question.teacher_feedback ? [{ feedback: question.teacher_feedback }] : [];
+      replies.forEach((reply) => {
+        const teacherMessage = document.createElement("p");
+        teacherMessage.className = "presentation-chat-bubble presentation-chat-bubble-teacher";
+        const teacherMeta = document.createElement("small");
+        teacherMeta.textContent = "You";
+        const message = document.createElement("span");
+        message.textContent = String(reply.feedback || "");
+        teacherMessage.append(teacherMeta, message);
+        thread.append(teacherMessage);
+      });
+
+      const replyButton = document.createElement("button");
+      replyButton.type = "button";
+      replyButton.className = "presentation-chat-select-thread";
+      replyButton.setAttribute("aria-pressed", String(Number(selectedQuestion?.id) === Number(question.id)));
+      replyButton.innerHTML = '<i class="fa-solid fa-reply" aria-hidden="true"></i><span>Reply in this chat</span>';
+      replyButton.addEventListener("click", () => {
+        container.dataset.replyQuestionId = String(question.id);
+        renderTeacherChat(container, questions, simulationId, onError, onSaved);
+        container.querySelector(".presentation-teacher-chat-composer textarea")?.focus();
+      });
+      thread.append(replyButton);
+      transcript.append(thread);
+    });
+    container.append(transcript);
+
+    if (selectedQuestion) {
+      const composer = document.createElement("form");
+      composer.className = "presentation-chat-composer presentation-teacher-chat-composer";
+      composer.dataset.questionId = String(selectedQuestion.id);
+      const recipient = document.createElement("label");
+      recipient.className = "presentation-teacher-chat-recipient";
+      recipient.textContent = `Replying to ${String(selectedQuestion.participant_name || "Student")}`;
+      const reply = document.createElement("textarea");
+      reply.name = "feedback";
+      reply.maxLength = 1000;
+      reply.required = true;
+      reply.rows = 2;
+      reply.setAttribute("aria-label", `Message ${String(selectedQuestion.participant_name || "student")}`);
+      reply.placeholder = "Write a message…";
+      reply.value = draft;
+      const composerFooter = document.createElement("div");
+      composerFooter.className = "presentation-teacher-chat-footer";
+      const errorMessage = document.createElement("small");
+      errorMessage.className = "presentation-chat-error";
+      errorMessage.setAttribute("role", "status");
+      const send = document.createElement("button");
+      send.type = "submit";
+      send.className = "presentation-question-reply";
+      send.innerHTML = '<i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span>Send</span>';
+      composerFooter.append(errorMessage, send);
+      composer.append(recipient, reply, composerFooter);
+      composer.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const message = reply.value.trim();
+        if (!simulationId || !message) return;
+        send.disabled = true;
+        errorMessage.textContent = "";
+        try {
+          const result = await workspaceRequest(
+            `/api/teacher/presentation-simulations/${encodeURIComponent(simulationId)}/questions/${encodeURIComponent(selectedQuestion.id)}`,
+            "PUT",
+            { feedback: message },
+            { silent: true }
+          );
+          const updatedQuestions = questions.map((question) => Number(question.id) === Number(selectedQuestion.id)
+            ? { ...question, ...result.question }
+            : question);
+          renderTeacherChat(container, updatedQuestions, simulationId, onError, onSaved);
+          onSaved(updatedQuestions);
+        } catch (error) {
+          send.disabled = false;
+          errorMessage.textContent = error instanceof Error ? error.message : "The message could not be sent.";
+          onError(error);
+        }
+      });
+      container.append(composer);
+    }
+    transcript.scrollTop = lastMessageWasVisible ? transcript.scrollHeight : previousScrollTop;
   }
 
   function renderQuestionChat(container, questions, simulationId, onError = () => {}, onSaved = () => {}, showReplyComposer = false) {
@@ -8505,7 +8771,247 @@
   slidesForm.elements.namedItem("subject").addEventListener("change", loadSlideWeeks);
   document.getElementById("slides-reload-weeks").addEventListener("click", loadSlideWeeks);
   slidesEditEditor.addEventListener("input", refreshSlideEditPreview);
+  slidesDialogEditTabs.addEventListener("keydown", (event) => {
+    const currentTab = event.target.closest("[data-slide-edit-tab]");
+    if (!currentTab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [...slidesDialogEditTabs.querySelectorAll("[data-slide-edit-tab]")];
+    const currentIndex = tabs.indexOf(currentTab);
+    const nextIndex = event.key === "Home" ? 0
+      : event.key === "End" ? tabs.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[nextIndex].click();
+    tabs[nextIndex].focus();
+  });
+  slidesDialogEditTabs.addEventListener("click", (event) => {
+    const tab = event.target.closest("[data-slide-edit-tab]");
+    if (!tab) return;
+    slidesDialogEditTabs.querySelectorAll("[data-slide-edit-tab]").forEach((button) => {
+      const selected = button === tab;
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    slidesEditEditor.querySelectorAll("[data-slide-edit-panel]").forEach((panel) => {
+      const selected = panel.dataset.slideEditPanel === tab.dataset.slideEditTab;
+      panel.hidden = !selected;
+      panel.querySelectorAll("input, textarea, select, button").forEach((control) => {
+        if (selected) {
+          if (control.hasAttribute("data-slide-tab-disabled")) {
+            control.disabled = control.dataset.slideTabDisabled === "true";
+            delete control.dataset.slideTabDisabled;
+          }
+        } else {
+          if (!control.hasAttribute("data-slide-tab-disabled")) {
+            control.dataset.slideTabDisabled = String(control.disabled);
+          }
+          control.disabled = true;
+        }
+      });
+    });
+    refreshSlideEditPreview();
+  });
+  slidesEditEditor.addEventListener("change", (event) => {
+    const uploadInput = event.target.closest("[data-slide-image-upload]");
+    if (uploadInput?.files?.[0]) {
+      void uploadSlideImage(uploadInput);
+      return;
+    }
+    const format = event.target.closest('[data-slide-field="visual-format"]');
+    if (format) {
+      const card = format.closest("[data-slide-edit-index]");
+      const imageOnly = format.value === "image";
+      const visualInput = card.querySelector('[data-slide-field="visual"]');
+      visualInput.disabled = imageOnly;
+      visualInput.required = !imageOnly;
+      card.querySelector(".slide-visual-advanced").hidden = imageOnly;
+    }
+    refreshSlideEditPreview();
+  });
   slidesEditEditor.addEventListener("click", (event) => {
+    const browseButton = event.target.closest("[data-slide-image-browse]");
+    if (browseButton) {
+      browseButton.closest("[data-slide-edit-index]")?.querySelector("[data-slide-image-upload]")?.click();
+      return;
+    }
+    const generateButton = event.target.closest("[data-slide-ai-visual]");
+    if (generateButton) void generateSlideVisual(generateButton);
+    const removeImageButton = event.target.closest("[data-slide-image-remove]");
+    if (removeImageButton) {
+      const card = removeImageButton.closest("[data-slide-edit-index]");
+      card.querySelector('[data-slide-field="image"]').value = "";
+      removeImageButton.hidden = true;
+      const format = card.querySelector('[data-slide-field="visual-format"]');
+      if (format.value === "image") {
+        format.value = "auto";
+        const visualInput = card.querySelector('[data-slide-field="visual"]');
+        visualInput.disabled = false;
+        visualInput.required = true;
+        card.querySelector(".slide-visual-advanced").hidden = false;
+      }
+      card.querySelector("[data-slide-visual-status]").textContent = "Image removed. Choose or generate a visual for this slide.";
+      refreshSlideEditPreview();
+    }
+  });
+  async function compressSlideImage(file) {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size < 1 || file.size > 12 * 1024 * 1024) {
+      throw new Error("Choose a JPEG, PNG or WebP image smaller than 12 MB.");
+    }
+    let source;
+    let width;
+    let height;
+    let releaseSource = () => {};
+    if (typeof createImageBitmap === "function") {
+      source = await createImageBitmap(file);
+      width = source.width;
+      height = source.height;
+      releaseSource = () => source.close();
+    } else {
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        source = new Image();
+        await new Promise((resolve, reject) => {
+          source.onload = resolve;
+          source.onerror = () => reject(new Error("Image decoding failed."));
+          source.src = objectUrl;
+        });
+        width = source.naturalWidth;
+        height = source.naturalHeight;
+        releaseSource = () => URL.revokeObjectURL(objectUrl);
+      } catch (error) {
+        URL.revokeObjectURL(objectUrl);
+        throw new Error("The selected image could not be opened in this browser.");
+      }
+    }
+    try {
+      if (width < 1 || height < 1 || width * height > 40000000) {
+        throw new Error("This image has too many pixels to safely add to a slide. Resize it and try again.");
+      }
+      const scale = Math.min(1, 1280 / width, 720 / height);
+      for (const reduction of [1, 0.85, 0.7, 0.55, 0.4]) {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width * scale * reduction));
+        canvas.height = Math.max(1, Math.round(height * scale * reduction));
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("The image could not be prepared in this browser.");
+        context.fillStyle = "#fff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(source, 0, 0, canvas.width, canvas.height);
+        for (const quality of [0.82, 0.68, 0.54, 0.4]) {
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+          if (!blob) throw new Error("The image could not be compressed.");
+          if (blob.size > 71000) continue;
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = () => reject(new Error("The image could not be read."));
+            reader.readAsDataURL(blob);
+          });
+          if (dataUrl.length <= 95000) return { url: dataUrl, width: canvas.width, height: canvas.height };
+        }
+      }
+    } finally {
+      releaseSource();
+    }
+    throw new Error("This image could not be compressed small enough for a slide. Choose a simpler or smaller image.");
+  }
+  async function uploadSlideImage(input) {
+    const card = input.closest("[data-slide-edit-index]");
+    const status = card.querySelector("[data-slide-visual-status]");
+    const removeButton = card.querySelector("[data-slide-image-remove]");
+    const browseButton = card.querySelector("[data-slide-image-browse]");
+    const file = input.files?.[0];
+    if (!file) return;
+    input.disabled = true;
+    browseButton.disabled = true;
+    status.textContent = "Preparing image…";
+    try {
+      const compressed = await compressSlideImage(file);
+      const image = {
+        ...compressed,
+        alt: file.name.replace(/\.[^.]+$/, "").slice(0, 160) || "Teacher-uploaded slide image",
+        source_url: "",
+        attribution: "",
+        license: "Teacher-provided image"
+      };
+      card.querySelector('[data-slide-field="image"]').value = JSON.stringify(image);
+      card.querySelector('[data-slide-field="visual-format"]').value = "image";
+      const visualInput = card.querySelector('[data-slide-field="visual"]');
+      visualInput.disabled = true;
+      visualInput.required = false;
+      card.querySelector(".slide-visual-advanced").hidden = true;
+      removeButton.hidden = false;
+      setSlideInlinePreview(card, true);
+      status.textContent = "Image added and compressed. The slide preview now shows the uploaded image.";
+      refreshSlideEditPreview();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The image could not be added.";
+      status.textContent = message;
+      showToast(message, "error");
+    } finally {
+      input.disabled = false;
+      browseButton.disabled = false;
+      input.value = "";
+    }
+  }
+  async function generateSlideVisual(button) {
+    const card = button.closest("[data-slide-edit-index]");
+    const status = card.querySelector("[data-slide-visual-status]");
+    const selectedFormat = card.querySelector('[data-slide-field="visual-format"]').value;
+    const prompt = card.querySelector('[data-slide-field="visual-prompt"]').value.trim();
+    const title = card.querySelector('[data-slide-field="title"]').value.trim();
+    const keyPoints = lines(card.querySelector('[data-slide-field="key_points"]').value);
+    let existingVisual = null;
+    if (selectedFormat === "graph") {
+      try {
+        const currentVisual = JSON.parse(card.querySelector('[data-slide-field="visual"]').value);
+        if (["graph", "geometry"].includes(currentVisual?.type)) existingVisual = currentVisual;
+      } catch { /* Generate from the slide content when existing visual data is incomplete. */ }
+    }
+    if (!title || !keyPoints.length) {
+      status.textContent = "Add a slide title and at least one key point before generating its visual.";
+      return;
+    }
+    button.disabled = true;
+    status.textContent = "AI is designing a visual for this slide…";
+    try {
+      const result = await workspaceRequest("/api/ai/presentation-visual", "POST", {
+        format: selectedFormat === "image" ? "auto" : selectedFormat,
+        prompt: prompt || "Choose the clearest visual for this slide. Keep it accurate and concise.",
+        slide_title: title,
+        subject: String(activeSlideEditDoc?.data?.subject || ""),
+        key_points: keyPoints,
+        ...(existingVisual ? { existing_visual: existingVisual } : {})
+      }, { silent: true });
+      const visual = result.visual;
+      if (!visual || typeof visual !== "object" || selectedFormat === "graph" && visual.type !== "graph") {
+        throw new Error("AI did not return a coordinate graph. Please try again.");
+      }
+      card.querySelector('[data-slide-field="visual"]').value = JSON.stringify(visual, null, 2);
+      card.querySelector('[data-slide-field="image"]').value = "";
+      card.querySelector('[data-slide-field="visual-format"]').value = ["bar_chart", "chart"].includes(visual.type) ? "chart"
+        : ["process", "timeline"].includes(visual.type) ? "diagram" : visual.type;
+      card.querySelector('[data-slide-field="visual"]').disabled = false;
+      card.querySelector('[data-slide-field="visual"]').required = true;
+      card.querySelector(".slide-visual-advanced").hidden = false;
+      card.querySelector("[data-slide-image-remove]").hidden = true;
+      setSlideInlinePreview(card, true);
+      status.textContent = "New AI visual generated. Check the preview and edit the visual data if needed.";
+      credits = result.credits || credits;
+      updateCreditDisplay();
+      refreshSlideEditPreview();
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "AI could not generate this visual.";
+    } finally {
+      button.disabled = false;
+    }
+  }
+  slidesEditEditor.addEventListener("click", (event) => {
+    const previewToggle = event.target.closest("[data-slide-preview-toggle]");
+    if (previewToggle) {
+      const card = previewToggle.closest("[data-slide-edit-index]");
+      setSlideInlinePreview(card, previewToggle.getAttribute("aria-expanded") !== "true");
+      return;
+    }
     const addButton = event.target.closest("[data-slide-add]");
     const removeButton = event.target.closest("[data-slide-remove]");
     if (!addButton && !removeButton) return;

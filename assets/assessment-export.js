@@ -2026,11 +2026,13 @@
         key_points: line.style === "Heading1" ? [] : [line.text]
       }));
     const slides = sourceSlides.map((slide) => {
-      if (slide.visual && typeof slide.visual === "object") return slide;
+      if (slide.visual && typeof slide.visual === "object"
+        || typeof slide.image?.url === "string" && slide.image.url.length <= 100000
+          && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(slide.image.url)) return slide;
       const items = (Array.isArray(slide.key_points) ? slide.key_points : [])
         .filter((point) => typeof point === "string" && point.trim()).slice(0, 4);
       return { ...slide, visual: { type: "cards", title: "Key ideas", items: items.length ? items : [String(slide.activity || slide.title || "Explore the lesson idea.")] } };
-    }).map((slide) => slide.visual.type === "cards" && !slide.visual.items?.length ? ({
+    }).map((slide) => slide.visual?.type === "cards" && !slide.visual.items?.length ? ({
       ...slide,
       visual: { ...slide.visual, items: [String(slide.activity || slide.title || "Explore the lesson idea.")] }
     }) : slide);
@@ -2067,6 +2069,7 @@
       if (current) lines.push(current);
       return lines.length ? lines : [""];
     };
+    const pdfImages = [];
     slides.forEach((slide, slideIndex) => {
       const commands = [];
       const rect = (x, top, width, height, fill, stroke = null) => {
@@ -2126,7 +2129,27 @@
       text(visual.title || "TEACHING VISUAL", right.x + 140000 * scale, right.y + 90000 * scale, 14.5, accent, true, right.w - 280000 * scale);
       const plot = { x: right.x + 190000 * scale, y: right.y + 430000 * scale, w: right.w - 380000 * scale, h: right.h - 600000 * scale };
       const visualType = String(visual.type || "").toLowerCase();
-      if (visualType === "table") {
+      const embeddedImageUrl = String(slide.image?.url || "");
+      if (embeddedImageUrl.length <= 100000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(embeddedImageUrl)) {
+        const base64 = embeddedImageUrl.slice("data:image/jpeg;base64,".length);
+        const binary = atob(base64);
+        const image = {
+          bytes: Uint8Array.from(binary, (character) => character.charCodeAt(0)),
+          width: Number(slide.image.width) > 0 ? Number(slide.image.width) : 16,
+          height: Number(slide.image.height) > 0 ? Number(slide.image.height) : 9
+        };
+        const aspect = image.width / image.height;
+        let placedWidth = plot.w;
+        let placedHeight = placedWidth / aspect;
+        if (placedHeight > plot.h) {
+          placedHeight = plot.h;
+          placedWidth = placedHeight * aspect;
+        }
+        const x = plot.x + (plot.w - placedWidth) / 2;
+        const y = H - plot.y - (plot.h + placedHeight) / 2;
+        commands.push(`q ${placedWidth} 0 0 ${placedHeight} ${x} ${y} cm /Im1 Do Q\n`);
+        pdfImages[slideIndex] = image;
+      } else if (visualType === "table") {
         const headers = Array.isArray(visual.headers) ? visual.headers.map(String).slice(0, 5) : [];
         const rows = Array.isArray(visual.rows) ? visual.rows.filter(Array.isArray).slice(0, 6) : [];
         const tableRows = [headers, ...rows].filter((row) => row.length);
@@ -2299,13 +2322,17 @@
     });
     const objects = ["", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"];
     const pageRefs = [];
-    pages.forEach((stream) => {
+    pages.forEach((stream, pageIndex) => {
       const pageNumber = objects.length + 1;
       const contentNumber = pageNumber + 1;
       pageRefs.push(`${pageNumber} 0 R`);
+      const image = pdfImages[pageIndex];
+      const imageObjectNumber = image ? contentNumber + 1 : null;
+      const imageHex = image ? Array.from(image.bytes, (byte) => byte.toString(16).padStart(2, "0")).join("") : "";
       objects.push(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentNumber} 0 R >>`,
-        `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${image ? ` /XObject << /Im1 ${imageObjectNumber} 0 R >>` : ""} >> /Contents ${contentNumber} 0 R >>`,
+        `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+        ...(image ? [`<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /DCTDecode] /Length ${imageHex.length + 1} >>\nstream\n${imageHex}>\nendstream`] : [])
       );
     });
     objects[0] = "<< /Type /Catalog /Pages 2 0 R >>";
@@ -2342,7 +2369,10 @@
     const sourceSlides = Array.isArray(data.slides) && data.slides.length
       ? data.slides
       : documentLines(doc).filter((line) => line.text).map((line) => ({ title: line.style === "Heading1" ? line.text : "", key_points: line.style === "Heading1" ? [] : [line.text] }));
-    const slides = sourceSlides.map((slide) => slide.visual && typeof slide.visual === "object" ? slide : ({
+    const slides = sourceSlides.map((slide) => slide.visual && typeof slide.visual === "object"
+      || typeof slide.image?.url === "string" && slide.image.url.length <= 100000
+        && /^data:image\/(?:jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(slide.image.url)
+      ? slide : ({
       ...slide,
       visual: {
         type: "cards",
@@ -2350,7 +2380,7 @@
         items: (Array.isArray(slide.key_points) ? slide.key_points : [])
           .filter((point) => typeof point === "string" && point.trim()).slice(0, 4)
       }
-    })).map((slide) => slide.visual.type === "cards" && !slide.visual.items?.length ? ({
+    })).map((slide) => slide.visual?.type === "cards" && !slide.visual.items?.length ? ({
       ...slide,
       visual: {
         ...slide.visual,
@@ -2398,6 +2428,10 @@
     };
     const pathShape = (id, name, x, y, cx, cy, pathCommands, color, width = 30000) =>
       `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${esc(name)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${Math.round(x)}" y="${Math.round(y)}"/><a:ext cx="${Math.max(1, Math.round(cx))}" cy="${Math.max(1, Math.round(cy))}"/></a:xfrm><a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="l" t="t" r="r" b="b"/><a:pathLst><a:path w="${Math.max(1, Math.round(cx))}" h="${Math.max(1, Math.round(cy))}" fill="none" stroke="1">${pathCommands}</a:path></a:pathLst></a:custGeom><a:noFill/><a:ln w="${width}"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:prstDash val="solid"/></a:ln></p:spPr></p:sp>`;
+    const embeddedImages = new Map();
+    const embeddedImageTypes = new Map();
+    const picture = (id, slideIndex, alt, x, y, cx, cy) =>
+      `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="Uploaded slide image ${slideIndex + 1}" descr="${esc(alt || "Teacher-uploaded slide image")}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId3"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${Math.round(x)}" y="${Math.round(y)}"/><a:ext cx="${Math.max(1, Math.round(cx))}" cy="${Math.max(1, Math.round(cy))}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
     const addSlide = (slide, slideIndex) => {
       const shapes = [];
       let id = 2;
@@ -2430,7 +2464,32 @@
       const plotX = rightX + 190000, plotY = rightY + 430000, plotW = rightW - 380000, plotH = panelH - 600000;
       const visualType = String(visual?.type || "").toLowerCase();
 
-      if (visualType === "table") {
+      const embeddedImageUrl = String(slide.image?.url || "");
+      if (embeddedImageUrl.length <= 100000 && /^data:image\/(?:jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(embeddedImageUrl)) {
+        const extension = embeddedImageUrl.startsWith("data:image/webp;") ? "webp" : "jpg";
+        const base64 = embeddedImageUrl.slice(embeddedImageUrl.indexOf(",") + 1);
+        const binary = atob(base64);
+        embeddedImages.set(slideIndex, Uint8Array.from(binary, (character) => character.charCodeAt(0)));
+        embeddedImageTypes.set(slideIndex, extension);
+        const imageWidth = Number(slide.image.width) > 0 ? Number(slide.image.width) : 16;
+        const imageHeight = Number(slide.image.height) > 0 ? Number(slide.image.height) : 9;
+        const aspect = imageWidth / imageHeight;
+        let placedWidth = plotW;
+        let placedHeight = placedWidth / aspect;
+        if (placedHeight > plotH) {
+          placedHeight = plotH;
+          placedWidth = placedHeight * aspect;
+        }
+        shapes.push(picture(
+          id++,
+          slideIndex,
+          String(slide.image.alt || ""),
+          plotX + (plotW - placedWidth) / 2,
+          plotY + (plotH - placedHeight) / 2,
+          placedWidth,
+          placedHeight
+        ));
+      } else if (visualType === "table") {
         const headers = Array.isArray(visual.headers) ? visual.headers.map(String).slice(0, 5) : [];
         const rows = Array.isArray(visual.rows) ? visual.rows.filter(Array.isArray).slice(0, 6) : [];
         const tableRows = [headers, ...rows].filter((row) => row.length);
@@ -2605,7 +2664,11 @@
       return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
     };
     const slideXml = slides.map(addSlide);
-    entries[0][1] = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>${slides.map((_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/><Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>`).join("")}</Types>`;
+    entries[0][1] = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${embeddedImages.size ? '<Default Extension="webp" ContentType="image/webp"/>' : ""}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>${slides.map((_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.slide+xml"/><Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>`).join("")}</Types>`;
+    const embeddedContentTypes = [...new Set(embeddedImageTypes.values())].map((extension) => extension === "jpg"
+      ? '<Default Extension="jpg" ContentType="image/jpeg"/>'
+      : '<Default Extension="webp" ContentType="image/webp"/>').join("");
+    entries[0][1] = entries[0][1].replace('<Default Extension="webp" ContentType="image/webp"/>', embeddedContentTypes);
     entries[2][1] = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId${slides.length + 2}"/></p:notesMasterIdLst><p:sldIdLst>${slides.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 2}"/>`).join("")}</p:sldIdLst><p:sldSz cx="${W}" cy="${H}" type="screen16x9"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>`;
     entries[3][1] = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>${slides.map((_, i) => `<Relationship Id="rId${i + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`).join("")}<Relationship Id="rId${slides.length + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="notesMasters/notesMaster1.xml"/></Relationships>`;
     const notesSlideXml = (slide, index) => {
@@ -2615,12 +2678,18 @@
       ).join("");
       return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:notes xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes Placeholder 1"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="457200" y="457200"/><a:ext cx="6000000" cy="7500000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs}</p:txBody></p:sp></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>`;
     };
-    slideXml.forEach((content, i) => entries.push(
-      [`ppt/slides/slide${i + 1}.xml`, content],
-      [`ppt/slides/_rels/slide${i + 1}.xml.rels`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide${i + 1}.xml"/></Relationships>`],
-      [`ppt/notesSlides/notesSlide${i + 1}.xml`, notesSlideXml(slides[i], i)],
-      [`ppt/notesSlides/_rels/notesSlide${i + 1}.xml.rels`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="../notesMasters/notesMaster1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="../slides/slide${i + 1}.xml"/></Relationships>`]
-    ));
+    slideXml.forEach((content, i) => {
+      const imageRelation = embeddedImages.has(i)
+        ? `<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/slide-image-${i + 1}.${embeddedImageTypes.get(i)}"/>`
+        : "";
+      entries.push(
+        [`ppt/slides/slide${i + 1}.xml`, content],
+        [`ppt/slides/_rels/slide${i + 1}.xml.rels`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide${i + 1}.xml"/>${imageRelation}</Relationships>`],
+        [`ppt/notesSlides/notesSlide${i + 1}.xml`, notesSlideXml(slides[i], i)],
+        [`ppt/notesSlides/_rels/notesSlide${i + 1}.xml.rels`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="../notesMasters/notesMaster1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="../slides/slide${i + 1}.xml"/></Relationships>`]
+      );
+      if (embeddedImages.has(i)) entries.push([`ppt/media/slide-image-${i + 1}.${embeddedImageTypes.get(i)}`, embeddedImages.get(i)]);
+    });
     return zipBlob(entries, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
   }
 
@@ -2646,7 +2715,7 @@
     };
     entries.forEach(([filename, content]) => {
       const name = encoder.encode(filename);
-      const bytes = encoder.encode(content);
+      const bytes = content instanceof Uint8Array ? content : encoder.encode(content);
       const crc = crc32(bytes);
       const local = header(30 + name.length);
       put(local, 0, 0x04034b50, 4); put(local, 4, 20); put(local, 14, crc, 4);

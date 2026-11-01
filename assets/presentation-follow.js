@@ -449,25 +449,39 @@
     questionList.replaceChildren();
     questionCount.textContent = String(questions.length);
     questionCount.hidden = questions.length === 0;
-    questionCount.setAttribute("aria-label", `${questions.length} questions sent`);
+    questionCount.setAttribute("aria-label", `${questions.length} chat messages sent`);
     const submitButton = questionForm.querySelector("button[type='submit']");
     const submitCount = submitButton?.querySelector(".presentation-follow-counter");
     if (submitCount) {
       submitCount.textContent = String(questions.length);
       submitCount.hidden = questions.length === 0;
-      submitButton.setAttribute("aria-label", `Send question, ${questions.length} questions sent`);
+      submitButton.setAttribute("aria-label", `Send message, ${questions.length} chat messages sent`);
     }
     questions.forEach((question) => {
       const card = document.createElement("article");
       card.className = "presentation-follow-question-item";
-      card.append(textElement("p", question.question));
+      const studentMessage = document.createElement("p");
+      studentMessage.className = "presentation-follow-chat-message presentation-follow-chat-student";
+      studentMessage.append(
+        textElement("small", "You"),
+        textElement("span", question.question)
+      );
+      card.append(studentMessage);
       const replies = Array.isArray(question.teacher_replies) && question.teacher_replies.length
         ? question.teacher_replies
         : question.teacher_feedback ? [{ feedback: question.teacher_feedback }] : [];
       if (replies.length) {
-        replies.forEach((reply) => card.append(textElement("small", `👩‍🏫 Teacher: ${reply.feedback}`)));
+        replies.forEach((reply) => {
+          const teacherMessage = document.createElement("p");
+          teacherMessage.className = "presentation-follow-chat-message presentation-follow-chat-teacher";
+          teacherMessage.append(
+            textElement("small", "Teacher"),
+            textElement("span", reply.feedback)
+          );
+          card.append(teacherMessage);
+        });
       } else {
-        card.append(textElement("small", "Waiting for your teacher's reply"));
+        card.append(textElement("small", "Waiting for a reply…"));
       }
       questionList.append(card);
     });
@@ -482,7 +496,7 @@
     [...pollPanel.querySelectorAll("button"), ...reactions.querySelectorAll("button")].forEach((button) => {
       button.disabled = true;
     });
-    status.textContent = interaction.type === "question" ? "Sending your question…" : "Sending your response…";
+    status.textContent = interaction.type === "question" ? "Sending your message…" : "Sending your response…";
     try {
       const response = await fetch(`${basePath}/api/presentation-simulations/${encodeURIComponent(token)}/interaction`, {
         method: "POST",
@@ -608,46 +622,60 @@
     const visual = slide.visual ? renderPresentationVisual(slide.visual) : null;
     let image = null;
     if (slide.image && typeof slide.image === "object") {
-      try {
-        const imageUrl = new URL(String(slide.image.url || ""));
-        const sourceUrl = new URL(String(slide.image.source_url || ""));
-        if (imageUrl.protocol === "https:"
-          && ["upload.wikimedia.org", "thumb.wikimedia.org"].includes(imageUrl.hostname)
-          && sourceUrl.protocol === "https:" && sourceUrl.hostname === "commons.wikimedia.org") {
-          image = document.createElement("figure");
-          image.className = "presentation-slide-image";
-          const imageElement = document.createElement("img");
-          imageElement.src = imageUrl.href;
-          imageElement.alt = String(slide.image.alt || "Curriculum-related classroom image");
-          imageElement.loading = "lazy";
-          imageElement.referrerPolicy = "no-referrer";
-          const caption = document.createElement("figcaption");
-          const sourceLink = document.createElement("a");
-          sourceLink.href = sourceUrl.href;
-          sourceLink.target = "_blank";
-          sourceLink.rel = "noopener noreferrer";
-          sourceLink.textContent = "Wikimedia Commons";
-          caption.append(sourceLink);
-          if (slide.image.attribution) caption.append(document.createTextNode(` · ${String(slide.image.attribution)}`));
-          try {
-            const licenseUrl = new URL(String(slide.image.license_url || ""));
-            if (licenseUrl.protocol === "https:" && ["creativecommons.org", "www.gnu.org"].includes(licenseUrl.hostname)) {
-              const licenseLink = document.createElement("a");
-              licenseLink.href = licenseUrl.href;
-              licenseLink.target = "_blank";
-              licenseLink.rel = "noopener noreferrer";
-              licenseLink.textContent = String(slide.image.license || "License");
-              caption.append(document.createTextNode(" · "), licenseLink);
-            } else if (slide.image.license) {
-              caption.append(document.createTextNode(` · ${String(slide.image.license)}`));
+      const embeddedImage = String(slide.image.url || "");
+      if (embeddedImage.length <= 100000 && /^data:image\/(?:jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(embeddedImage)) {
+        image = document.createElement("figure");
+        image.className = "presentation-slide-image";
+        const imageElement = document.createElement("img");
+        imageElement.src = embeddedImage;
+        imageElement.alt = String(slide.image.alt || "Teacher-uploaded slide image");
+        imageElement.loading = "lazy";
+        const caption = document.createElement("figcaption");
+        caption.textContent = String(slide.image.license || "Teacher-provided image");
+        image.append(imageElement, caption);
+      }
+      if (!image) {
+        try {
+          const imageUrl = new URL(String(slide.image.url || ""));
+          const sourceUrl = new URL(String(slide.image.source_url || ""));
+          if (imageUrl.protocol === "https:"
+            && ["upload.wikimedia.org", "thumb.wikimedia.org"].includes(imageUrl.hostname)
+            && sourceUrl.protocol === "https:" && sourceUrl.hostname === "commons.wikimedia.org") {
+            image = document.createElement("figure");
+            image.className = "presentation-slide-image";
+            const imageElement = document.createElement("img");
+            imageElement.src = imageUrl.href;
+            imageElement.alt = String(slide.image.alt || "Curriculum-related classroom image");
+            imageElement.loading = "lazy";
+            imageElement.referrerPolicy = "no-referrer";
+            const caption = document.createElement("figcaption");
+            const sourceLink = document.createElement("a");
+            sourceLink.href = sourceUrl.href;
+            sourceLink.target = "_blank";
+            sourceLink.rel = "noopener noreferrer";
+            sourceLink.textContent = "Wikimedia Commons";
+            caption.append(sourceLink);
+            if (slide.image.attribution) caption.append(document.createTextNode(` · ${String(slide.image.attribution)}`));
+            try {
+              const licenseUrl = new URL(String(slide.image.license_url || ""));
+              if (licenseUrl.protocol === "https:" && ["creativecommons.org", "www.gnu.org"].includes(licenseUrl.hostname)) {
+                const licenseLink = document.createElement("a");
+                licenseLink.href = licenseUrl.href;
+                licenseLink.target = "_blank";
+                licenseLink.rel = "noopener noreferrer";
+                licenseLink.textContent = String(slide.image.license || "License");
+                caption.append(document.createTextNode(" · "), licenseLink);
+              } else if (slide.image.license) {
+                caption.append(document.createTextNode(` · ${String(slide.image.license)}`));
+              }
+            } catch {
+              if (slide.image.license) caption.append(document.createTextNode(` · ${String(slide.image.license)}`));
             }
-          } catch {
-            if (slide.image.license) caption.append(document.createTextNode(` · ${String(slide.image.license)}`));
+            image.append(imageElement, caption);
           }
-          image.append(imageElement, caption);
+        } catch {
+          image = null;
         }
-      } catch {
-        image = null;
       }
     }
     if (image && visual) {
@@ -658,15 +686,25 @@
     } else if (image || visual) {
       article.append(image || visual);
     }
-    const detail = document.createElement("p");
-    if (slide.activity) detail.append(document.createTextNode(String(slide.activity)));
-    if (slide.activity && slide.visual_suggestion) detail.append(document.createElement("br"));
+    if (slide.activity) {
+      const activity = document.createElement("section");
+      activity.className = "presentation-slide-activity";
+      const activityHeading = document.createElement("strong");
+      const activityIcon = document.createElement("i");
+      activityIcon.className = "fa-solid fa-people-group";
+      activityIcon.setAttribute("aria-hidden", "true");
+      activityHeading.append(activityIcon, document.createTextNode(" Classroom activity"));
+      activity.append(activityHeading, textElement("p", String(slide.activity)));
+      article.append(activity);
+    }
     if (slide.visual_suggestion) {
+      const detail = document.createElement("p");
+      detail.className = "presentation-slide-visual-suggestion";
       const label = document.createElement("b");
       label.textContent = "Visual:";
       detail.append(label, document.createTextNode(` ${String(slide.visual_suggestion)}`));
+      article.append(detail);
     }
-    article.append(detail);
     if (mode !== "all" && Number(data.reveal_total) > 0) {
       article.append(textElement("small", `Content ${Math.min(Number(data.reveal_step) || 0, Number(data.reveal_total))} of ${data.reveal_total}`, "presentation-follow-reveal-progress"));
     }
@@ -674,6 +712,7 @@
       const revealSelectors = [
         "li",
         ".presentation-slide-image",
+        ".presentation-slide-activity",
         ".presentation-visual-cards > div > span",
         ".presentation-visual-table tbody tr",
         ".presentation-chart-column",

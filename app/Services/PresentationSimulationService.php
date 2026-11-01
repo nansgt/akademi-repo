@@ -16,7 +16,7 @@ final class PresentationSimulationService
     private const REACTIONS = ['understood', 'confused', 'slower', 'faster'];
     private const COLORS = ['#e5484d', '#2f80ed', '#27ae60', '#f2c94c', '#ffffff'];
     private const MAX_SLIDES = 100;
-    private const MAX_PRESENTATION_BYTES = 500000;
+    private const MAX_PRESENTATION_BYTES = 2500000;
 
     public function create(int $userId, array $input): array
     {

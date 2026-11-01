@@ -272,7 +272,7 @@ final class WorkspaceService
         $data = $input['data'] ?? [];
         $html = $input['html'] ?? null;
         if (!in_array($type, self::DOCUMENT_TYPES, true) || $title === '' || mb_strlen($title) > 255
-            || !is_array($data) || !is_string($html) || strlen($html) > 300000) {
+            || !is_array($data) || !is_string($html) || strlen($html) > 2500000) {
             throw new RuntimeException('The document is invalid or too large to save.', 422);
         }
         $pdo = Connection::get();

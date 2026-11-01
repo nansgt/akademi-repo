@@ -15,6 +15,7 @@ final class AiCreditService
         'scheme' => 2,
         'slides' => 1,
         'assistant' => 1,
+        'presentation_visual' => 1,
         'curriculum_preview' => 1,
         'curriculum_topic_discovery' => 1,
     ];

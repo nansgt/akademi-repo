@@ -808,6 +808,27 @@ try {
         ]);
     }
 
+    if ($path === '/api/ai/presentation-visual' && $method === 'POST') {
+        Csrf::verifyRequest();
+        $user = require_user($auth);
+        $auth->requireRole($user, 'teacher');
+        $input = request_json();
+        $credits = new AiCreditService();
+        $reservationId = $credits->reserve(
+            (int)$user['id'],
+            'presentation_visual',
+            in_array('superadmin', $user['roles'], true)
+        );
+        try {
+            $visual = (new AiProviderService())->generatePresentationVisual($input);
+            $credits->complete($reservationId);
+            json_response(['visual' => $visual, 'credits' => $credits->balance((int)$user['id'])]);
+        } catch (Throwable $exception) {
+            $credits->refund($reservationId);
+            throw $exception;
+        }
+    }
+
     if ($path === '/api/ai/generate' && $method === 'POST') {
         Csrf::verifyRequest();
         $user = require_user($auth);

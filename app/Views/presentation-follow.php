@@ -16,9 +16,9 @@ header('X-Robots-Tag: noindex, nofollow');
   <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/fontawesome.min.css')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/solid.min.css')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/action-icons.css')) ?>">
-  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=150')) ?>">
-  <link rel="stylesheet" href="<?= e(app_url('assets/presentation-follow.css?v=26')) ?>">
-  <script src="<?= e(app_url('assets/presentation-follow.js?v=28')) ?>" defer></script>
+  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=155')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/presentation-follow.css?v=27')) ?>">
+  <script src="<?= e(app_url('assets/presentation-follow.js?v=29')) ?>" defer></script>
   <script src="<?= e(app_url('assets/action-icons.js?v=1')) ?>" defer></script>
 </head>
 <body class="presentation-follow-page">
@@ -33,7 +33,7 @@ header('X-Robots-Tag: noindex, nofollow');
         <div class="presentation-follow-join-card">
           <span class="presentation-follow-join-icon" aria-hidden="true">👋</span>
           <h1 id="follow-join-title">Welcome to class</h1>
-          <p>Enter your name so your teacher can recognize your poll answers and questions.</p>
+          <p>Enter your name so your teacher can recognize your poll answers and chat messages.</p>
           <form data-follow-join-form>
             <label for="follow-student-name">Your name</label>
             <input id="follow-student-name" name="name" maxlength="80" autocomplete="name" required placeholder="e.g. Ama">
@@ -48,12 +48,12 @@ header('X-Robots-Tag: noindex, nofollow');
         <section class="presentation-follow-poll" data-follow-poll hidden aria-live="polite"></section>
         <nav class="presentation-follow-reactions" id="follow-reactions" data-follow-reactions aria-label="Classroom pace responses" hidden></nav>
         <details class="presentation-follow-questions" data-follow-question-panel>
-          <summary><i class="fa-solid fa-circle-question" aria-hidden="true"></i> Ask your teacher <span class="presentation-follow-counter" data-follow-question-count hidden></span></summary>
+          <summary><i class="fa-solid fa-comments" aria-hidden="true"></i> Class chat <span class="presentation-follow-counter" data-follow-question-count hidden></span></summary>
           <div data-follow-questions></div>
           <form data-follow-question-form>
-            <label for="follow-student-question">Your question</label>
-            <textarea id="follow-student-question" name="question" maxlength="1000" required rows="2" placeholder="Ask a question about the lesson…"></textarea>
-            <button type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send question <span class="presentation-follow-counter" hidden></span></button>
+            <label for="follow-student-question">Message</label>
+            <textarea id="follow-student-question" name="question" maxlength="1000" required rows="2" placeholder="Write a message to your teacher…"></textarea>
+            <button type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send message <span class="presentation-follow-counter" hidden></span></button>
           </form>
         </details>
         <footer class="presentation-follow-footer">

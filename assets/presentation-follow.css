@@ -11,6 +11,9 @@
 .presentation-follow-stage .presentation-slide-preview ul { display: grid; gap: 13px; margin: 0; padding-left: 1.2em; }
 .presentation-follow-stage .presentation-slide-preview li { line-height: 1.45; }
 .presentation-follow-stage .presentation-slide-preview > p { font-size: clamp(13px, 1.5vw, 18px); line-height: 1.5; }
+.presentation-follow-stage .presentation-slide-activity { padding: clamp(9px, 1.5vh, 14px) clamp(10px, 1.5vw, 18px); }
+.presentation-follow-stage .presentation-slide-activity strong { font-size: clamp(10px, 1.2vw, 14px); }
+.presentation-follow-stage .presentation-slide-activity p { font-size: clamp(13px, 1.5vw, 18px); line-height: 1.4; }
 .presentation-follow-stage .presentation-visual { margin-top: 24px; font-size: 14px; }
 .presentation-follow-stage .presentation-media-column { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); grid-template-rows: auto; flex: 0 1 auto; height: auto; gap: clamp(6px, 1.2vw, 14px); min-height: 0; max-height: 100%; align-self: center; }
 .presentation-follow-stage .presentation-media-column .presentation-slide-image { height: 100%; min-height: 0; max-height: none; margin: 0; }
@@ -96,6 +99,9 @@
 .presentation-follow-stage .presentation-slide-preview ul { gap: clamp(3px, .8vh, 10px); padding-left: 1.1em; }
 .presentation-follow-stage .presentation-slide-preview li { font-size: clamp(12px, 2.2vh, 21px); line-height: 1.28; overflow-wrap: anywhere; }
 .presentation-follow-stage .presentation-slide-preview > p { margin: 0; font-size: clamp(11px, 1.7vh, 16px); line-height: 1.28; overflow-wrap: anywhere; }
+.presentation-follow-stage .presentation-slide-activity { gap: clamp(3px, .5vh, 7px); padding: clamp(5px, .8vh, 10px) clamp(7px, 1vw, 12px); }
+.presentation-follow-stage .presentation-slide-activity strong { font-size: clamp(8px, 1.2vh, 11px); }
+.presentation-follow-stage .presentation-slide-activity p { font-size: clamp(10px, 1.6vh, 15px); line-height: 1.25; overflow-wrap: anywhere; }
 .presentation-follow-stage .presentation-visual { min-height: 0; max-height: 34%; gap: clamp(4px, .8vh, 10px); margin-top: clamp(4px, 1vh, 12px); padding: clamp(6px, 1.5vh, 16px); overflow: hidden; }
 .presentation-follow-stage .presentation-visual > strong { font-size: clamp(11px, 1.8vh, 17px); }
 .presentation-follow-stage .presentation-visual-table { overflow: auto; }
@@ -202,8 +208,13 @@
 .presentation-follow-questions > summary .presentation-follow-counter { margin-left: auto; }
 .presentation-follow-questions[open] > summary .presentation-follow-counter { margin-left: 0; }
 .presentation-follow-questions > [data-follow-questions] { display: grid; gap: 8px; max-height: 18vh; padding: 0 14px 12px; overflow: auto; }
-.presentation-follow-question-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--canvas) 72%, var(--paper)); }
-.presentation-follow-question-item p { margin: 0 0 6px; color: var(--ink); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.presentation-follow-question-item { display: grid; justify-items: start; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--canvas) 72%, var(--paper)); }
+.presentation-follow-question-item p { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.presentation-follow-chat-message { display: grid; gap: 3px; width: fit-content; max-width: 90%; padding: 7px 10px; border-radius: 11px; white-space: pre-wrap; }
+.presentation-follow-chat-message small { margin: 0; color: var(--muted); font-size: 9px; font-weight: 750; }
+.presentation-follow-chat-message span { overflow-wrap: anywhere; }
+.presentation-follow-chat-student { border-top-left-radius: 4px; background: color-mix(in srgb, var(--forest) 8%, var(--paper)); }
+.presentation-follow-chat-teacher { justify-self: end; border-top-right-radius: 4px; background: color-mix(in srgb, var(--forest) 14%, var(--paper)); }
 .presentation-follow-question-item small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 .presentation-follow-questions form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; padding: 12px 14px 14px; border-top: 1px solid color-mix(in srgb, var(--forest) 10%, var(--line)); background: color-mix(in srgb, var(--forest) 3%, transparent); }
 .presentation-follow-questions form label { grid-column: 1 / -1; color: var(--ink); font-size: 11px; font-weight: 750; }
@@ -228,7 +239,7 @@
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
   align-items: stretch;
   column-gap: 2cqi;
   row-gap: .7cqi;
@@ -239,28 +250,29 @@
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) header { grid-column: 1; grid-row: 1; }
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) h4 { grid-column: 1; grid-row: 2; }
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) ul { grid-column: 1; grid-row: 3; align-self: center; }
-.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-visual { grid-column: 2; grid-row: 1 / 6; align-self: center; height: fit-content; }
-.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-visual {
-  align-self: stretch;
-  height: 100%;
-  min-height: 0;
-}
+.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-visual { grid-column: 2; grid-row: 1 / 7; align-self: center; height: fit-content; }
+.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-visual { align-self: center; height: fit-content; min-height: min-content; }
 .presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-media-column {
+  grid-column: 2;
+  grid-row: 1 / 7;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, .35fr) minmax(0, 1.65fr);
-  height: 100%;
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-self: center;
+  height: fit-content;
 }
-.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) > p { grid-column: 1; grid-row: 4; margin: auto 0 0; }
-.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-follow-reveal-progress { grid-column: 1; grid-row: 5; margin-top: .4cqi; }
-.presentation-follow-stage .presentation-visual { min-height: 0; max-height: 100%; gap: .8cqi; margin-top: 0; padding: 1.2cqi; overflow: hidden; }
+.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-slide-activity { grid-column: 1; grid-row: 4; margin: 0; align-self: end; }
+.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) > p { grid-column: 1; grid-row: 5; margin: auto 0 0; }
+.presentation-follow-stage .presentation-slide-preview:has(.presentation-visual) .presentation-follow-reveal-progress { grid-column: 1; grid-row: 6; margin-top: .4cqi; }
+.presentation-follow-stage .presentation-visual { min-height: min-content; max-height: 100%; height: fit-content; gap: .8cqi; margin-top: 0; padding: 1.2cqi; overflow: visible; }
 .presentation-follow-stage .presentation-visual > strong { font-size: clamp(9px, 1.1cqi, 12px); }
 .presentation-follow-stage .presentation-visual-table { grid-template-rows: auto auto; }
 .presentation-follow-stage .presentation-visual-table-scroll { min-height: 0; overflow: auto; }
 .presentation-follow-stage .presentation-visual-table table { min-width: 0; font-size: clamp(9px, .9cqi, 11px); }
 .presentation-follow-stage .presentation-visual-table th, .presentation-follow-stage .presentation-visual-table td { max-width: none; padding: clamp(4px, .4cqi, 7px) clamp(5px, .5cqi, 9px); white-space: normal; overflow-wrap: anywhere; }
-.presentation-follow-stage .presentation-chart-bars { height: 100%; min-height: 0; gap: clamp(5px, 1cqi, 12px); padding: 10px 8px 0; }
+.presentation-follow-stage .presentation-chart-bars { height: clamp(100px, 17cqi, 200px); min-height: 100px; gap: clamp(5px, 1cqi, 12px); padding: 10px 8px 0; }
 .presentation-follow-stage .presentation-visual-chart { grid-template-rows: auto minmax(0, 1fr) auto; }
-.presentation-follow-stage .presentation-chart-column { grid-template-rows: clamp(20px, 3cqi, 32px) minmax(0, 1fr) clamp(30px, 4cqi, 42px); }
+.presentation-follow-stage .presentation-chart-column { grid-template-rows: auto minmax(45px, 1fr) auto; }
 .presentation-follow-stage .presentation-chart-column > span,
 .presentation-follow-stage .presentation-chart-column > small,
 .presentation-follow-stage .presentation-chart-unit,
@@ -277,9 +289,9 @@
 .presentation-follow-stage .presentation-visual-cards { grid-template-rows: auto auto; }
 .presentation-follow-stage .presentation-visual-cards b { font-size: clamp(9px, 1cqi, 12px); }
 .presentation-follow-stage .presentation-visual-graph { grid-template-rows: auto minmax(0, 1fr) auto; }
-.presentation-follow-stage .presentation-visual-graph > div { height: 100%; min-height: 0; margin: 4px 8px; }
-.presentation-follow-stage .presentation-follow-line-chart { width: 100%; height: 100%; min-height: 0; }
-.presentation-follow-stage .presentation-visual-geometry > svg { width: 100%; height: 100%; max-height: 100%; }
+.presentation-follow-stage .presentation-visual-graph > div { height: clamp(100px, 17cqi, 200px); min-height: 100px; margin: 4px 8px; }
+.presentation-follow-stage .presentation-follow-line-chart { width: 100%; height: auto; min-height: 100px; }
+.presentation-follow-stage .presentation-visual-geometry > svg { width: 100%; height: auto; max-height: min(250px, 30cqi); }
 .presentation-follow-stage .presentation-follow-geometry-legend { gap: 8px 18px; font-size: clamp(11px, 1.1cqi, 15px); }
 .presentation-follow-stage .presentation-follow-geometry-legend i { flex-basis: clamp(9px, 1cqi, 14px); width: clamp(9px, 1cqi, 14px); height: clamp(9px, 1cqi, 14px); }
 .presentation-follow-pace-toggle {
