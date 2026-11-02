@@ -16,9 +16,9 @@ header('X-Robots-Tag: noindex, nofollow');
   <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/fontawesome.min.css')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/fontawesome/css/solid.min.css')) ?>">
   <link rel="stylesheet" href="<?= e(app_url('assets/action-icons.css')) ?>">
-  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=155')) ?>">
-  <link rel="stylesheet" href="<?= e(app_url('assets/presentation-follow.css?v=31')) ?>">
-  <script src="<?= e(app_url('assets/presentation-follow.js?v=32')) ?>" defer></script>
+  <link rel="stylesheet" href="<?= e(app_url('assets/styles.css?v=157')) ?>">
+  <link rel="stylesheet" href="<?= e(app_url('assets/presentation-follow.css?v=34')) ?>">
+  <script src="<?= e(app_url('assets/presentation-follow.js?v=34')) ?>" defer></script>
   <script src="<?= e(app_url('assets/action-icons.js?v=1')) ?>" defer></script>
 </head>
 <body class="presentation-follow-page">
@@ -53,7 +53,7 @@ header('X-Robots-Tag: noindex, nofollow');
             <button type="button" data-follow-dialog-open="poll" hidden><i class="fa-solid fa-square-poll-vertical" aria-hidden="true"></i> Poll</button>
             <button type="button" data-follow-dialog-open="pace"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i> Class pace <span class="presentation-follow-counter" data-follow-pace-count hidden></span></button>
             <button type="button" data-follow-dialog-open="chat"><i class="fa-solid fa-comments" aria-hidden="true"></i> Class chat <span class="presentation-follow-counter" data-follow-question-count hidden></span></button>
-            <button type="button" data-follow-dialog-open="direct"><i class="fa-solid fa-user-group" aria-hidden="true"></i> Private chat</button>
+            <button type="button" data-follow-dialog-open="direct"><i class="fa-solid fa-user-group" aria-hidden="true"></i> Private chat <span class="presentation-follow-counter" data-follow-direct-count hidden></span></button>
             <button type="button" class="presentation-follow-fullscreen" data-follow-fullscreen aria-label="Enter full screen" aria-pressed="false"><i class="fa-solid fa-expand" aria-hidden="true"></i><span>Full screen</span></button>
           </div>
         </footer>
@@ -88,6 +88,7 @@ header('X-Robots-Tag: noindex, nofollow');
           </form>
         </dialog>
       </div>
+      <p class="presentation-follow-notification" data-follow-direct-notification role="status" aria-live="polite"></p>
     </section>
   </main>
 </body>

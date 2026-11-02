@@ -1874,6 +1874,7 @@ html[data-theme="dark"] .presentation-theme-vibrant { border-color: #4f3c56; }
 }
 .presentation-live-controls [data-presentation-participants-open] { position: relative; }
 .presentation-live-controls [data-presentation-participant-button-count] { position: absolute; top: -5px; right: -5px; }
+.presentation-live-controls [data-presentation-participants-open] .presentation-direct-unread-count { position: absolute; z-index: 1; top: -5px; left: -5px; }
 .presentation-participant-online { margin: 5px 0; color: #a4f0c6; font-size: 9px; }
 .presentation-participant-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 6px; max-height: 156px; margin: 0; padding: 0 3px 0 0; overflow-y: auto; list-style: none; }
 .presentation-participant { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 7px 9px; border: 1px solid rgb(255 255 255 / 12%); border-radius: 8px; background: #18251f; font-size: 11px; }
@@ -1898,6 +1899,36 @@ html[data-theme="dark"] .presentation-theme-vibrant { border-color: #4f3c56; }
   cursor: pointer;
 }
 .presentation-participant-chat:hover { background: rgb(112 210 173 / 18%); }
+.presentation-direct-unread-count {
+  display: inline-grid;
+  min-width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0 5px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 999px;
+  background: #d84c52;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.presentation-direct-unread-count[hidden] { display: none; }
+.presentation-participant-chat .presentation-direct-unread-count { margin-left: 1px; }
+.presentation-direct-message-notice {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 6px 9px;
+  border: 1px solid rgb(255 224 138 / 25%);
+  border-radius: 8px;
+  background: rgb(255 224 138 / 8%);
+  color: #ffe08a;
+  font-size: 11px;
+  font-weight: 700;
+}
+.presentation-direct-message-notice:empty { display: none; }
 .presentation-direct-chat-dialog {
   width: min(460px, calc(100vw - 28px));
   max-height: min(680px, calc(100dvh - 28px));
@@ -2114,4 +2145,44 @@ html[data-theme="dark"] .slides-history-status span { border-color: var(--line);
   .presentation-feedback-items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .presentation-pace-card .presentation-feedback-items { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .presentation-question-live-feedback { top: 82px; right: auto; bottom: 48px; left: 8px; width: min(440px, calc(100% - 16px)); }
+}
+@media (max-width: 760px) {
+  .presentation-viewer-header { gap: 5px; padding: 5px 8px; }
+  .presentation-toolbar-category { flex-wrap: wrap; justify-content: center; }
+  .presentation-toolbar-category::before { display: none; }
+  .presentation-live-sharing {
+    display: flex;
+    align-content: flex-start;
+    align-items: flex-start;
+    max-height: min(30dvh, 220px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .presentation-live-controls { flex: 0 0 100%; }
+  .presentation-question-live-feedback {
+    position: static;
+    flex: 0 0 100%;
+    width: 100%;
+    max-height: min(30dvh, 240px);
+    min-height: 0;
+    padding: 8px;
+  }
+  .presentation-question-feedback-content { min-height: 0; }
+  .presentation-poll-live-feedback { min-width: 0; }
+  .presentation-pace-card { grid-template-columns: minmax(0, 1fr); }
+  .presentation-pace-card h3 { white-space: normal; }
+  .presentation-participant { flex-wrap: wrap; }
+  .presentation-participant > span { flex: 1 1 100%; }
+  .presentation-participant-chat { margin-left: auto; }
+}
+@media (max-width: 480px) {
+  .presentation-toolbar-category { flex: 1 1 100%; border-left: 0; border-top: 1px solid rgb(255 255 255 / 15%); }
+  .presentation-viewer-header-actions { width: 100%; justify-content: center; }
+  .presentation-live-sharing { max-height: min(28dvh, 190px); padding: 5px 8px; }
+  .presentation-live-controls { justify-content: center; }
+  .presentation-participant { gap: 6px; }
+  .presentation-participant-chat { min-height: 34px; }
+  .presentation-direct-chat-dialog { width: 100vw; max-height: 100dvh; border-radius: 0; }
+  .presentation-direct-chat-composer { grid-template-columns: minmax(0, 1fr); }
+  .presentation-direct-chat-composer button { justify-self: end; }
 }

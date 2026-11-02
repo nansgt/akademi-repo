@@ -28,10 +28,13 @@
   const directMessages = document.querySelector("[data-follow-direct-messages]");
   const directDialog = document.querySelector('[data-follow-dialog="direct"]');
   const directStatus = document.querySelector("[data-follow-direct-status]");
+  const directCount = document.querySelector("[data-follow-direct-count]");
+  const directNotification = document.querySelector("[data-follow-direct-notification]");
   const themes = new Set(["modern", "editorial", "vibrant", "data", "minimal"]);
   let timer = null;
   let presenceTimer = null;
   let directRefreshTimer = null;
+  let directNotificationTimer = null;
   let countdownTimer = null;
   let lastSlideKey = "";
   let lastRevealRender = null;
@@ -53,6 +56,7 @@
   let latestDirectParticipants = [];
   let latestDirectMessages = [];
   let directMessagesPending = false;
+  let lastDirectUnreadByPeer = null;
   const ownAnswers = new Map();
   const ownReactions = new Map();
   const reactionNames = {
@@ -73,7 +77,7 @@
       try {
         dialog.showModal();
         if (trigger.dataset.followDialogOpen === "direct") {
-          void refreshDirectMessages();
+          void refreshDirectMessages(directRecipient.value || "teacher");
           if (directRefreshTimer === null) {
             directRefreshTimer = window.setInterval(() => void refreshDirectMessages(), 3000);
           }
@@ -548,7 +552,9 @@
       directRecipient.replaceChildren(...participants.map((participant) => {
         const option = document.createElement("option");
         option.value = String(participant.id);
-        option.textContent = `${participant.name}${participant.role === "student" ? " · online" : ""}`;
+        const unread = Number(participant.unread_count) || 0;
+        const presence = participant.role === "student" ? (participant.online ? " · online" : " · away") : "";
+        option.textContent = `${participant.name}${presence}${unread ? ` · ${unread} new` : ""}`;
         return option;
       }));
       if (participants.some((participant) => String(participant.id) === selected)) directRecipient.value = selected;
@@ -556,6 +562,11 @@
       lastDirectMessagesKey = "";
     }
     const recipientId = directRecipient.value || "teacher";
+    const unreadTotal = participants.reduce((sum, participant) => sum + Math.max(0, Number(participant.unread_count) || 0), 0);
+    directCount.textContent = unreadTotal > 99 ? "99+" : String(unreadTotal);
+    directCount.hidden = unreadTotal === 0;
+    const directButton = document.querySelector('[data-follow-dialog-open="direct"]');
+    directButton?.setAttribute("aria-label", `Private chat${unreadTotal ? `, ${unreadTotal} unread messages` : ""}`);
     const conversation = messages.filter((message) => String(message.peer_id) === recipientId);
     const messagesKey = `${recipientId}:${JSON.stringify(conversation)}`;
     if (messagesKey === lastDirectMessagesKey) return;
@@ -577,11 +588,12 @@
     directMessages.scrollTop = directMessages.scrollHeight;
   }
 
-  async function refreshDirectMessages() {
-    if (!directDialog.open || !participantId || directMessagesPending) return;
+  async function refreshDirectMessages(peerId = directDialog.open ? directRecipient.value : null) {
+    if (!participantId || directMessagesPending || document.hidden || stopped) return;
     directMessagesPending = true;
     try {
       const query = new URLSearchParams({ participant_id: participantId });
+      if (peerId) query.set("peer_id", peerId);
       const response = await fetch(
         `${basePath}/api/presentation-simulations/${encodeURIComponent(token)}/messages?${query}`,
         { credentials: "same-origin", headers: { Accept: "application/json" } }
@@ -590,6 +602,25 @@
       if (!response.ok) throw new Error(data.error || "Private messages could not be refreshed.");
       latestDirectParticipants = Array.isArray(data.participants) ? data.participants : [];
       latestDirectMessages = Array.isArray(data.messages) ? data.messages : [];
+      const unreadByPeer = new Map(latestDirectParticipants.map((person) => [
+        String(person.id),
+        Math.max(0, Number(person.unread_count) || 0)
+      ]));
+      const newMessages = lastDirectUnreadByPeer === null ? [] : latestDirectParticipants.filter((person) => (
+        (unreadByPeer.get(String(person.id)) || 0) > (lastDirectUnreadByPeer.get(String(person.id)) || 0)
+      ));
+      if (newMessages.length) {
+        const sender = newMessages[0];
+        directNotification.textContent = sender
+          ? `New private message from ${sender.name}.`
+          : "You have a new private message.";
+        if (directNotificationTimer !== null) window.clearTimeout(directNotificationTimer);
+        directNotificationTimer = window.setTimeout(() => {
+          directNotification.textContent = "";
+          directNotificationTimer = null;
+        }, 7000);
+      }
+      lastDirectUnreadByPeer = unreadByPeer;
       directStatus.textContent = "";
       renderDirectChat(latestDirectParticipants, latestDirectMessages);
     } catch (error) {
@@ -691,6 +722,7 @@
     experience.hidden = false;
     if (timer !== null) window.clearTimeout(timer);
     if (presenceTimer !== null) window.clearInterval(presenceTimer);
+    if (directRefreshTimer !== null) window.clearInterval(directRefreshTimer);
     if (countdownTimer !== null) window.clearInterval(countdownTimer);
     status.textContent = message;
     stage.replaceChildren(textElement("p", message, "presentation-follow-placeholder"));
@@ -925,7 +957,11 @@
     const revision = interactionRevision;
     try {
       const query = new URLSearchParams({ participant_id: participantId });
-      const response = await fetch(`${basePath}/api/presentation-simulations/${encodeURIComponent(token)}?${query}`, {
+      const initialRead = latestState === null;
+      const stateUrl = initialRead
+        ? `${basePath}/api/presentation-simulations/${encodeURIComponent(token)}?${query}`
+        : `${basePath}/api/presentation-simulations/${encodeURIComponent(token)}/updates?${query}&since=${encodeURIComponent(latestState.state_version || 0)}`;
+      const response = await fetch(stateUrl, {
         credentials: "same-origin",
         headers: { Accept: "application/json" },
         cache: "no-store"
@@ -938,7 +974,16 @@
         }
         throw new Error(data.error || `The presentation could not be refreshed (HTTP ${response.status}).`);
       }
-      if (data.status !== "active") {
+      if (!initialRead && data.changed === false) {
+        connected = true;
+        timer = window.setTimeout(poll, 0);
+        return;
+      }
+      const state = initialRead ? data : data.state;
+      if (!state || typeof state !== "object") {
+        throw new Error("The live presentation update was empty. Reconnecting…");
+      }
+      if (state.status !== "active") {
         showEnded("The teacher has ended this presentation.");
         return;
       }
@@ -948,8 +993,8 @@
       }
       const reconnected = !connected;
       connected = true;
-      latestState = data;
-      renderState(data);
+      latestState = state;
+      renderState(state);
       if (reconnected && lastSlideKey) status.textContent = "Connection restored · following your teacher";
     } catch (error) {
       connected = false;
@@ -1068,9 +1113,11 @@
     joinGate.hidden = true;
     experience.hidden = false;
     if (latestState) renderState(latestState);
-    void sendPresence();
+    void sendPresence().then(() => refreshDirectMessages());
     if (presenceTimer !== null) window.clearInterval(presenceTimer);
     presenceTimer = window.setInterval(() => void sendPresence(), 20_000);
+    if (directRefreshTimer !== null) window.clearInterval(directRefreshTimer);
+    directRefreshTimer = window.setInterval(() => void refreshDirectMessages(), 3000);
     void poll();
   };
   if (participantName) startFollowing();
@@ -1099,7 +1146,7 @@
     if (question) void submitInteraction({ type: "question", question });
   });
   directRecipient.addEventListener("change", () => {
-    renderDirectChat(latestDirectParticipants, latestDirectMessages);
+    void refreshDirectMessages(directRecipient.value);
   });
   directForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1127,6 +1174,7 @@
     if (!document.hidden && !stopped) {
       if (timer !== null) window.clearTimeout(timer);
       void sendPresence();
+      void refreshDirectMessages();
       void poll();
     }
   });

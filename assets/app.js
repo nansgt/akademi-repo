@@ -6995,6 +6995,13 @@
     const participantsClose = dialog.querySelector("[data-presentation-participants-close]");
     participantsClose.addEventListener("click", () => participantsDialog.close());
     const participantJoinNotice = dialog.querySelector("[data-presentation-join-notice]");
+    const directMessageNotice = document.createElement("p");
+    directMessageNotice.className = "presentation-direct-message-notice";
+    directMessageNotice.setAttribute("role", "status");
+    directMessageNotice.setAttribute("aria-live", "polite");
+    liveSharing.append(directMessageNotice);
+    let directMessageNoticeTimer = null;
+    let lastDirectUnreadByParticipant = new Map();
     const reactionNotice = dialog.querySelector("[data-presentation-reaction-notice]");
     pollHideButton.addEventListener("click", () => {
       if (feedbackPanels.poll) feedbackVisibilityButtons.poll?.click();
@@ -7019,6 +7026,7 @@
     let activeTool = "none";
     let activeColor = "#e5484d";
     let stateWritePending = 0;
+    let stateWriteRevision = 0;
     let pointerUpdateTimer = null;
     let pointerRequestPending = false;
     let pointerRequestPromise = Promise.resolve();
@@ -7284,6 +7292,11 @@
             { silent: true }
           );
           renderMessages(Array.isArray(result.messages) ? result.messages : []);
+          student.unread_count = 0;
+          if (liveState?.participants) {
+            lastParticipantSummary = "";
+            renderParticipants(liveState.participants);
+          }
           status.textContent = "";
         } catch (error) {
           status.textContent = error instanceof Error ? error.message : "The conversation could not be refreshed.";
@@ -7329,6 +7342,26 @@
       if (summary === lastParticipantSummary) return;
       lastParticipantSummary = summary;
       const students = Array.isArray(participants) ? participants : [];
+      const unreadTotal = students.reduce((sum, student) => sum + Math.max(0, Number(student.unread_count) || 0), 0);
+      const unreadByParticipant = new Map(students.map((student) => [
+        String(student.id || ""),
+        Math.max(0, Number(student.unread_count) || 0)
+      ]));
+      const newMessages = students.filter((student) => {
+        const id = String(student.id || "");
+        const current = Math.max(0, Number(student.unread_count) || 0);
+        return current > 0 && current > (lastDirectUnreadByParticipant.get(id) || 0);
+      });
+      if (newMessages.length) {
+        const sender = newMessages[0];
+        directMessageNotice.textContent = `New private message from ${String(sender.name || "Student")}.`;
+        if (directMessageNoticeTimer !== null) window.clearTimeout(directMessageNoticeTimer);
+        directMessageNoticeTimer = window.setTimeout(() => {
+          directMessageNotice.textContent = "";
+          directMessageNoticeTimer = null;
+        }, 7000);
+      }
+      lastDirectUnreadByParticipant = unreadByParticipant;
       const occurrences = new Map();
       const studentKeys = students.map((student) => {
         const base = `${student.name || "Student"}|${student.joined_at || ""}`;
@@ -7357,7 +7390,17 @@
       const participantButtonCount = liveControls.querySelector("[data-presentation-participant-button-count]");
       if (participantButtonCount) participantButtonCount.textContent = students.length > 99 ? "99+" : String(students.length);
       const participantButton = liveControls.querySelector("[data-presentation-participants-open]");
-      if (participantButton) participantButton.setAttribute("aria-label", `View students, ${students.length} joined`);
+      if (participantButton) {
+        participantButton.setAttribute(
+          "aria-label",
+          `View students, ${students.length} joined${unreadTotal ? `, ${unreadTotal} unread private messages` : ""}`
+        );
+        const unreadBadge = participantButton.querySelector("[data-presentation-direct-unread-count]");
+        if (unreadBadge) {
+          unreadBadge.textContent = unreadTotal > 99 ? "99+" : String(unreadTotal);
+          unreadBadge.hidden = unreadTotal === 0;
+        }
+      }
       participantList.replaceChildren();
       if (!students.length) {
         const empty = document.createElement("li");
@@ -7379,7 +7422,8 @@
           const chat = document.createElement("button");
           chat.type = "button";
           chat.className = "presentation-participant-chat";
-          chat.innerHTML = '<i class="fa-solid fa-comment-dots" aria-hidden="true"></i><span>Message</span>';
+          const unread = Math.max(0, Number(student.unread_count) || 0);
+          chat.innerHTML = `<i class="fa-solid fa-comment-dots" aria-hidden="true"></i><span>Message</span><span class="presentation-direct-unread-count"${unread ? "" : " hidden"}>${unread > 99 ? "99+" : unread}</span>`;
           chat.setAttribute("aria-label", `Message ${String(student.name || "student")} privately`);
           chat.addEventListener("click", () => openTeacherDirectChat(student, liveSession?.id));
           item.append(chat);
@@ -7540,20 +7584,21 @@
     const updateLiveState = async (payload, { silent = true } = {}) => {
       if (!liveSession) return null;
       const sessionId = liveSession.id;
+      stateWritePending++;
+      stateWriteRevision++;
       const write = async () => {
         if (!liveSession || liveSession.id !== sessionId) return null;
-        stateWritePending++;
-        try {
-          const state = await workspaceRequest(`/api/teacher/presentation-simulations/${sessionId}`, "PUT", payload, { silent });
-          if (liveSession?.id === sessionId) applyLiveState(state);
-          return state;
-        } finally {
-          stateWritePending--;
-        }
+        const state = await workspaceRequest(`/api/teacher/presentation-simulations/${sessionId}`, "PUT", payload, { silent });
+        if (liveSession?.id === sessionId) applyLiveState(state);
+        return state;
       };
       const queuedWrite = liveStateWriteQueue.then(write, write);
       liveStateWriteQueue = queuedWrite.catch(() => null);
-      return queuedWrite;
+      try {
+        return await queuedWrite;
+      } finally {
+        stateWritePending--;
+      }
     };
     const currentPoint = (event) => {
       const bounds = stage.querySelector(".presentation-slide-preview")?.getBoundingClientRect();
@@ -8061,8 +8106,11 @@
         }
         const pollOwnerState = async () => {
           if (!liveSession || !dialog.open) return;
+          const pollRevision = stateWriteRevision;
+          const sessionId = liveSession.id;
           try {
-            const state = await workspaceRequest(`/api/teacher/presentation-simulations/${liveSession.id}`, "GET", null, { silent: true });
+            const state = await workspaceRequest(`/api/teacher/presentation-simulations/${sessionId}`, "GET", null, { silent: true });
+            if (liveSession?.id !== sessionId) return;
             if (state.status !== "active") {
               const endedSessionId = liveSession.id;
               clearActiveLivePresentation();
@@ -8082,7 +8130,7 @@
               endButton.setAttribute("aria-label", `Session ${endedSessionId} ended`);
               return;
             }
-            if (stateWritePending === 0) applyLiveState(state);
+            if (stateWritePending === 0 && stateWriteRevision === pollRevision) applyLiveState(state);
           } catch (error) {
             setFeedback(error instanceof Error ? `Reconnecting… ${error.message}` : "Reconnecting to students…", true);
           }
@@ -8107,7 +8155,7 @@
         const joinedStudentCount = Array.isArray(liveState?.participants) ? liveState.participants.length : 0;
         participantsButton.setAttribute("aria-label", `View students, ${joinedStudentCount} joined`);
         participantsButton.title = "View joined students";
-        participantsButton.innerHTML = `<i class="fa-solid fa-users" aria-hidden="true"></i><small>Students</small><span class="presentation-live-count" data-presentation-participant-button-count>${joinedStudentCount > 99 ? "99+" : joinedStudentCount}</span>`;
+        participantsButton.innerHTML = `<i class="fa-solid fa-users" aria-hidden="true"></i><small>Students</small><span class="presentation-live-count" data-presentation-participant-button-count>${joinedStudentCount > 99 ? "99+" : joinedStudentCount}</span><span class="presentation-direct-unread-count" data-presentation-direct-unread-count hidden></span>`;
         participantsButton.addEventListener("click", () => participantsDialog.showModal());
         const linkToggle = document.createElement("button");
         linkToggle.type = "button";

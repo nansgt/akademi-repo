@@ -191,6 +191,16 @@ try {
         require AKADEMI_ROOT . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'Views' . DIRECTORY_SEPARATOR . 'presentation-follow.php';
         exit;
     }
+    if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})/updates$#D', $path, $matches) && $method === 'GET') {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+        json_response((new \Akademi\Services\PresentationSimulationService())->waitForUpdate(
+            $matches[1],
+            (string)($_GET['participant_id'] ?? ''),
+            $_GET['since'] ?? null
+        ));
+    }
     if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})$#D', $path, $matches) && $method === 'GET') {
         json_response((new \Akademi\Services\PresentationSimulationService())->read(
             $matches[1],
@@ -200,7 +210,8 @@ try {
     if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})/messages$#D', $path, $matches) && $method === 'GET') {
         json_response((new \Akademi\Services\PresentationSimulationService())->studentDirectMessages(
             $matches[1],
-            (string)($_GET['participant_id'] ?? '')
+            (string)($_GET['participant_id'] ?? ''),
+            isset($_GET['peer_id']) ? (string)$_GET['peer_id'] : null
         ));
     }
     if (preg_match('#^/api/presentation-simulations/([a-fA-F0-9]{64})/join$#D', $path, $matches) && $method === 'POST') {
